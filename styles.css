@@ -1,0 +1,411 @@
+/* SlopTube — YouTube-style feed. Theme colors come from Obsidian variables;
+   thumbnails are always dark "terminal art" regardless of theme. */
+
+.sloptube {
+	--st-radius: 12px;
+	--st-red: #ff0033;
+	/* Text sizes below are relative (em), so this scales all of them; thumbnail art uses cqw. */
+	font-size: calc(var(--st-font-scale, 1) * 1em);
+}
+
+/* Obsidian gives buttons a fixed px size; scale it with the rest. */
+.sloptube button {
+	font-size: calc(var(--font-ui-small) * var(--st-font-scale, 1));
+}
+
+/* ---------- Header, tabs, chips ---------- */
+
+.st-feed {
+	padding: 0 !important;
+}
+
+.st-header {
+	position: sticky;
+	top: 0;
+	z-index: 3;
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	padding: 10px 20px;
+	background: var(--background-primary);
+}
+
+.st-logo {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-weight: 800;
+	font-size: 1.2em;
+	letter-spacing: -0.03em;
+}
+
+.st-logo-icon {
+	display: inline-flex;
+	padding: 2px 6px;
+	border-radius: 7px;
+	background: var(--st-red);
+	color: #fff;
+}
+
+.st-logo-icon svg {
+	fill: currentColor;
+	width: 14px;
+	height: 14px;
+}
+
+.st-tabs {
+	display: flex;
+	gap: 4px;
+}
+
+.st-tabs button,
+.st-chip {
+	box-shadow: none;
+	border-radius: 8px;
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+	font-weight: 500;
+	white-space: nowrap;
+}
+
+.st-tabs button.is-active,
+.st-chip.is-active {
+	background: var(--text-normal);
+	color: var(--background-primary);
+}
+
+.st-tools {
+	margin-left: auto;
+}
+
+.st-chips {
+	display: flex;
+	gap: 8px;
+	padding: 4px 20px 12px;
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+
+.st-body {
+	padding: 4px 20px 40px;
+}
+
+.st-empty {
+	padding: 60px 0;
+	text-align: center;
+	color: var(--text-muted);
+}
+
+.st-sentinel {
+	height: 1px;
+}
+
+/* ---------- Cards ---------- */
+
+.st-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(var(--st-card-w, 260px), 1fr));
+	gap: 28px 16px;
+}
+
+.st-card {
+	cursor: pointer;
+	min-width: 0;
+}
+
+.st-thumb {
+	position: relative;
+	aspect-ratio: 16 / 9;
+	overflow: hidden;
+	container-type: inline-size;
+	background: #0b0b12;
+}
+
+/* 48 columns × 18 rows fill the 16:9 box; sizes derive from the thumbnail's own width. */
+.st-thumb-art {
+	width: 100%;
+	height: 100%;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	overflow: hidden;
+	white-space: pre;
+	font-family: var(--font-monospace);
+	font-size: calc(100cqw / 28.8);
+	line-height: calc(100cqw / 32);
+	letter-spacing: 0;
+	font-weight: 700;
+}
+
+/* Overlays sit on the thumbnail, which ignores the font-size setting, so they stay in px. */
+.st-duration,
+.st-badge {
+	position: absolute;
+	padding: 1px 5px;
+	border-radius: 4px;
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1.5;
+	color: #fff;
+}
+
+.st-duration {
+	right: 6px;
+	bottom: 6px;
+	background: rgba(0, 0, 0, 0.8);
+}
+
+.st-badge {
+	left: 6px;
+	top: 6px;
+	background: var(--st-red);
+}
+
+.st-meta {
+	display: flex;
+	gap: 12px;
+	padding-top: 12px;
+}
+
+.st-avatar {
+	flex: 0 0 36px;
+	height: 36px;
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: #fff;
+	font-size: 0.87em;
+	font-weight: 700;
+}
+
+.st-info {
+	min-width: 0;
+}
+
+.st-title {
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	font-weight: 600;
+	line-height: 1.35;
+	color: var(--text-normal);
+}
+
+.st-channel,
+.st-stats,
+.st-shelf-count {
+	font-size: 0.85em;
+	color: var(--text-muted);
+}
+
+.st-channel {
+	margin-top: 4px;
+}
+
+.st-verified {
+	color: var(--text-faint);
+}
+
+.is-link {
+	cursor: pointer;
+}
+
+.is-link:hover {
+	color: var(--text-normal);
+	text-decoration: underline;
+}
+
+/* ---------- Channel shelves ---------- */
+
+.st-shelf {
+	margin-bottom: 36px;
+}
+
+.st-shelf-header {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 12px;
+}
+
+.st-shelf-name {
+	font-size: 1.25em;
+	font-weight: 700;
+}
+
+.st-live {
+	padding: 0 6px;
+	border-radius: 4px;
+	background: var(--st-red);
+	color: #fff;
+	font-size: 0.73em;
+	font-weight: 700;
+}
+
+.st-shelf-row {
+	display: flex;
+	gap: 16px;
+	overflow-x: auto;
+	padding-bottom: 8px;
+	scroll-snap-type: x proximity;
+}
+
+.st-shelf-row .st-card {
+	flex: 0 0 var(--st-card-w, 260px);
+	scroll-snap-align: start;
+}
+
+/* ---------- Watch page ---------- */
+
+.st-watch-container {
+	position: relative;
+	overflow: hidden;
+}
+
+.st-watch-col {
+	max-width: var(--st-watch-w, 920px);
+	margin: 0 auto;
+	padding: 12px 24px 180px;
+}
+
+.st-watch-nav {
+	margin-bottom: 12px;
+}
+
+.st-watch-nav button {
+	display: inline-flex;
+	gap: 6px;
+	flex-direction: row-reverse;
+}
+
+.st-btn-icon {
+	display: inline-flex;
+}
+
+
+.st-watch-title {
+	margin: 14px 0 10px;
+	font-size: 1.5em;
+	line-height: 1.3;
+}
+
+.st-watch-channel {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 14px;
+}
+
+.st-channel-name {
+	font-weight: 600;
+}
+
+.st-open-note {
+	margin-left: auto;
+	border-radius: 18px;
+}
+
+/* The "⋯" reveal and the "Próza javítása" button it uncovers, right of "Eredeti jegyzet". */
+.st-prose-busy {
+	color: var(--text-muted);
+	font-size: 0.85em;
+	cursor: progress;
+}
+
+.st-watch-channel .st-more {
+	margin-left: -6px;
+	color: var(--text-faint);
+}
+
+.st-description {
+	padding: 12px 18px;
+	border-radius: var(--st-radius);
+	background: var(--background-secondary);
+}
+
+.st-hook {
+	margin-top: 6px;
+	font-weight: 600;
+}
+
+.st-note {
+	margin-top: 12px;
+}
+
+/* ---------- "Up next" rail ---------- */
+
+.st-rail {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 5;
+	padding: 10px 20px 16px;
+	background: var(--background-primary);
+	border-top: 1px solid var(--background-modifier-border);
+	box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.25);
+	transform: translateY(100%);
+	transition: transform 0.25s ease;
+}
+
+.st-rail.is-shown {
+	transform: translateY(0);
+}
+
+.st-rail-title {
+	margin-bottom: 8px;
+	font-weight: 700;
+}
+
+.st-rail-row {
+	display: flex;
+	gap: 14px;
+	overflow-x: auto;
+}
+
+.st-rail .st-card {
+	flex: 0 0 calc(var(--st-card-w, 260px) * 0.8);
+}
+
+.st-rail .st-avatar {
+	display: none;
+}
+
+.st-rail .st-meta {
+	padding-top: 8px;
+}
+
+/* ---------- Lectures ("Előadások") ---------- */
+
+.st-lecture-channel {
+	margin-bottom: 44px;
+}
+
+.st-lecture {
+	margin: 0 0 24px 48px;
+}
+
+.st-lecture-header {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+	margin-bottom: 10px;
+}
+
+.st-lecture-name {
+	font-weight: 600;
+}
+
+/* ---------- Bait edit dialog ---------- */
+
+.st-edit-wide {
+	width: 100%;
+	min-width: 280px;
+}
+
+.st-edit-warn {
+	color: var(--text-error);
+}

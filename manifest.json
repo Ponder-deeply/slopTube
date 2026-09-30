@@ -1,0 +1,9 @@
+{
+  "id": "sloptube",
+  "name": "SlopTube",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Browse wiki notes as a YouTube-style feed: ASCII thumbnails, clickbait titles, a watch page with related notes.",
+  "author": "Ponder-deeply",
+  "isDesktopOnly": false
+}
