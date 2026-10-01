@@ -5,8 +5,11 @@ import { FileSystemAdapter, Notice, Plugin, WorkspaceLeaf, debounce } from "obsi
 import { BaitStore } from "./bait";
 import { ProseRunner } from "./claude";
 import { randomWeight, weightedShuffle } from "./feed";
+import { DAY, type Streak, dayKey, dueAt, keptSeries, overdue, streak } from "./memory";
 import { type NoteCard, VaultModel } from "./model";
 import { decorateNewTabs, undecorateNewTabs } from "./newtab";
+import { type OwlContext, owlLine } from "./owl";
+import { RecallStore } from "./recall";
 import { DEFAULT_SETTINGS, SlopSettingTab, SlopSettings } from "./settings";
 import { FeedView, VIEW_FEED } from "./views/FeedView";
 import { VIEW_WATCH, WatchView } from "./views/WatchView";
@@ -16,6 +19,9 @@ export default class SlopTube extends Plugin {
 	model = new VaultModel(this.app);
 	bait = new BaitStore();
 	prose = new ProseRunner();
+	recall = new RecallStore();
+	/** Subject → its 30-day kept % series, valid for one local day and until the next grade. */
+	private keptCache = new Map<string, { day: string; series: number[] }>();
 
 	override async onload(): Promise<void> {
 		await this.loadSettings();
@@ -25,7 +31,10 @@ export default class SlopTube extends Plugin {
 			document.body.style.removeProperty("--st-watch-w");
 			document.body.style.removeProperty("--st-font-scale");
 		});
-		await this.bait.load(this.app.vault.adapter, this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`);
+		const pluginDir = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
+		await this.bait.load(this.app.vault.adapter, pluginDir);
+		await this.recall.load(this.app.vault.adapter, pluginDir);
+		this.registerEvent(this.app.vault.on("rename", (file, oldPath) => this.recall.rename(oldPath, file.path)));
 
 		this.registerView(VIEW_FEED, (leaf) => new FeedView(leaf, this));
 		this.registerView(VIEW_WATCH, (leaf) => new WatchView(leaf, this));
@@ -56,10 +65,15 @@ export default class SlopTube extends Plugin {
 		});
 	}
 
+	override onunload(): void {
+		void this.recall.flush();
+	}
+
 	/** Rebuilds the note model. Open views re-render only if they were showing an empty model. */
 	private rebuildModel(): void {
 		const wasEmpty = this.model.cards.length === 0;
 		this.model.rebuild();
+		this.keptCache.clear();
 		if (!wasEmpty) return;
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_FEED)) (leaf.view as FeedView).render();
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_WATCH)) void (leaf.view as WatchView).render();
@@ -123,9 +137,76 @@ export default class SlopTube extends Plugin {
 
 	/** Plays a weighted-random note, in `leaf` or else the active one. */
 	randomVideo(leaf?: WorkspaceLeaf): void {
-		const [card] = weightedShuffle(this.model.cards, (c) => randomWeight(c, this.model, this.settings), Date.now());
+		const now = Date.now();
+		const [card] = weightedShuffle(this.model.cards, (c) => randomWeight(c, this.model, this.settings, this.recall, now), now);
 		if (!card) return void new Notice("SlopTube: nincs videó.");
 		void this.openWatch(card.path, leaf ?? this.app.workspace.getLeaf(false));
+	}
+
+	// ---------- Habit loop ----------
+
+	/** Credits a day: goalPerSubject for each active-semester subject (at least one). */
+	dailyGoal(): number {
+		return this.settings.goalPerSubject * Math.max(1, this.model.activeSubjects.size);
+	}
+
+	streak(now = Date.now()): Streak {
+		return streak(this.recall.daily(), this.recall.goals, this.dailyGoal(), dayKey(now));
+	}
+
+	/** Golden = recalled before and now overdue. */
+	isGolden(card: NoteCard, now = Date.now()): boolean {
+		return overdue(this.recall.memory(card.path), now) > 0;
+	}
+
+	/** A subject's kept % for the last 30 days, today last. */
+	keptSeries(subject: string, now = Date.now()): number[] {
+		const day = dayKey(now);
+		const hit = this.keptCache.get(subject);
+		if (hit?.day === day) return hit.series;
+		const cards = this.model.channel(subject)?.cards ?? [];
+		const series = keptSeries(cards.map((c) => this.recall.events(c.path)), now);
+		this.keptCache.set(subject, { day, series });
+		return series;
+	}
+
+	/** Logs a graded recall and updates every feed's streak and owl. */
+	grade(card: NoteCard, g: 0 | 1): void {
+		const before = this.streak();
+		this.recall.grade(card.path, g, this.dailyGoal());
+		this.keptCache.delete(card.subject);
+		const after = this.streak();
+		if (before.today < before.goal && after.today >= after.goal) new Notice("Mai adag kész. A Minisztérium elégedett.");
+		this.refreshHabit();
+	}
+
+	owlLine(now = Date.now()): string | null {
+		if (!this.settings.owl) return null;
+		let longOverdue: NoteCard | null = null;
+		let oldestDue = now - 7 * DAY;
+		for (const card of this.model.cards) {
+			const m = this.recall.memory(card.path);
+			if (m && dueAt(m) < oldestDue) {
+				oldestDue = dueAt(m);
+				longOverdue = card;
+			}
+		}
+		const fading = [...this.model.activeSubjects].find((subject) => {
+			const series = this.keptSeries(subject, now);
+			return series[series.length - 8] - series[series.length - 1] > 10;
+		});
+		const ctx: OwlContext = {
+			streak: this.streak(now),
+			hour: new Date(now).getHours(),
+			longOverdue: longOverdue?.title ?? null,
+			fading: fading ?? null,
+		};
+		return owlLine(ctx);
+	}
+
+	/** Re-renders the streak and owl in every open feed, without touching its cards. */
+	refreshHabit(): void {
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_FEED)) (leaf.view as FeedView).renderHabit();
 	}
 
 	async loadSettings(): Promise<void> {

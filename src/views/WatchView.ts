@@ -7,7 +7,7 @@ import type { NoteCard } from "../model";
 import { relatedCards } from "../related";
 import { formatAge, formatViews, hash } from "../util";
 import { BaitEditModal } from "./BaitModal";
-import { ThumbLoader, channelAvatar, drawThumb, renderCard, wantsNewTab } from "./card";
+import { ThumbLoader, channelAvatar, drawThumb, renderCard, renderRetention, wantsNewTab } from "./card";
 
 export const VIEW_WATCH = "sloptube-watch";
 
@@ -108,6 +108,7 @@ export class WatchView extends ItemView {
 		const name = who.createDiv({ cls: "st-channel-name", text: card.subject });
 		if (card.verified) name.createSpan({ cls: "st-verified", text: " ✔" });
 		who.createDiv({ cls: "st-stats", text: [card.section, `${channel?.cards.length ?? 0} videó`].filter(Boolean).join(" • ") });
+		renderRetention(who, plugin.keptSeries(card.subject));
 		const hub = channel?.hub;
 		if (hub && hub !== card) {
 			name.addClass("is-link");
@@ -119,14 +120,57 @@ export class WatchView extends ItemView {
 
 		const desc = col.createDiv({ cls: "st-description" });
 		desc.createDiv({ cls: "st-stats", text: [formatViews(card.backlinks.length, hash(card.path)), formatAge(card.updated)].filter(Boolean).join(" • ") });
-		if (bait.hook) desc.createDiv({ cls: "st-hook", text: bait.hook });
-		const note = desc.createDiv({ cls: "st-note markdown-rendered" });
+		// The title is the question, the hook its answer: hide the answer until asked for,
+		// unless the gate is off or the note was already graded today.
+		const gated = plugin.settings.recallGate && !plugin.recall.gradedToday(card.path);
+		const gate = gated ? desc.createDiv({ cls: "st-gate" }) : null;
+		const answer = desc.createDiv({ cls: "st-answer" });
+		if (bait.hook) answer.createDiv({ cls: "st-hook", text: bait.hook });
+		const grade = answer.createDiv({ cls: "st-grade" });
+		this.renderGrade(grade, card);
+		if (gate) this.renderGate(gate, answer, grade, bait.hook !== null);
+		const note = answer.createDiv({ cls: "st-note markdown-rendered" });
 		// Not cachedRead: the Claude CLI may have just rewritten the note outside Obsidian.
 		const text = await plugin.app.vault.read(card.file);
 		if (this.card() !== card) return; // navigated away while reading
 		await MarkdownRenderer.render(plugin.app, text.slice(getFrontMatterInfo(text).contentStart), note, card.path, this.page);
 
 		this.buildRail(card);
+	}
+
+	/** "Megvan a tippem — mutasd" reveals the answer; "Csak nézem" reveals it without grading. */
+	private renderGate(gate: HTMLElement, answer: HTMLElement, grade: HTMLElement, hasHook: boolean): void {
+		answer.hide();
+		gate.createDiv({ cls: "st-gate-prompt", text: hasHook ? "Mi a válasz? Tippelj, mielőtt megnézed." : "Mit tudsz erről? Gondold végig, mielőtt megnézed." });
+		const actions = gate.createDiv({ cls: "st-gate-actions" });
+		const reveal = actions.createEl("button", { cls: "mod-cta st-gate-reveal", text: "Megvan a tippem — mutasd" });
+		const skip = actions.createEl("button", { cls: "st-gate-skip", text: "Csak nézem" });
+		reveal.onclick = () => {
+			gate.remove();
+			answer.show();
+		};
+		skip.onclick = () => {
+			gate.remove();
+			grade.hide();
+			answer.show();
+		};
+	}
+
+	/** "Tudtad?" with two grades; after grading, the chosen one stays marked and can be changed today. */
+	private renderGrade(el: HTMLElement, card: NoteCard): void {
+		el.empty();
+		const today = this.plugin.recall.gradedToday(card.path);
+		el.createSpan({ cls: "st-grade-q", text: today ? "✔ Rögzítve" : "Tudtad?" });
+		const button = (g: 0 | 1, label: string) => {
+			const b = el.createEl("button", { text: label });
+			if (today?.g === g) b.addClass("is-active");
+			b.onclick = () => {
+				this.plugin.grade(card, g);
+				this.renderGrade(el, card);
+			};
+		};
+		button(1, "Tudtam");
+		button(0, "Nem tudtam");
 	}
 
 	/**

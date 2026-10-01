@@ -1,18 +1,23 @@
 // Feed ordering: chip filters, the seeded weighted shuffle, and shelf sorting.
 
+import { overdue } from "./memory";
 import type { NoteCard, VaultModel } from "./model";
+import type { RecallStore } from "./recall";
 import type { SlopSettings } from "./settings";
 import { rng } from "./util";
 
-/** "all" | "active" | "recent" | "s:<subject>" — a plain string so it serializes into view state. */
+/** "all" | "active" | "due" | "recent" | "s:<subject>" — a plain string so it serializes into view state. */
 export type Chip = string;
 export type SortMode = "newest" | "views" | "az";
 
 const RECENT_DAYS = 14;
+/** Weight multiplier for a note already graded today, so the feed does not repeat it. */
+const FRESH_DAMPING = 0.3;
 
-export function chipMatches(chip: Chip, card: NoteCard, model: VaultModel): boolean {
+export function chipMatches(chip: Chip, card: NoteCard, model: VaultModel, recall: RecallStore, now = Date.now()): boolean {
 	if (chip === "all") return true;
 	if (chip === "active") return model.activeSubjects.has(card.subject);
+	if (chip === "due") return overdue(recall.memory(card.path), now) > 0;
 	if (chip === "recent") {
 		const t = card.updated ? Date.parse(card.updated) : NaN;
 		return !Number.isNaN(t) && Date.now() - t < RECENT_DAYS * 86_400_000;
@@ -20,9 +25,22 @@ export function chipMatches(chip: Chip, card: NoteCard, model: VaultModel): bool
 	return chip === `s:${card.subject}`;
 }
 
-export function randomWeight(card: NoteCard, model: VaultModel, s: SlopSettings): number {
+/** Overdue notes surface more (up to 1 + overdueBoost times), today's recalls sink. */
+export function recallFactor(card: NoteCard, recall: RecallStore, s: SlopSettings, now = Date.now()): number {
+	const fresh = recall.gradedToday(card.path, now) ? FRESH_DAMPING : 1;
+	return (1 + s.overdueBoost * overdue(recall.memory(card.path), now)) * fresh;
+}
+
+export function randomWeight(card: NoteCard, model: VaultModel, s: SlopSettings, recall: RecallStore, now = Date.now()): number {
 	const base = s.subjectWeights[card.subject] ?? 1;
-	return model.activeSubjects.has(card.subject) ? base * s.activeBoost : base;
+	const subject = model.activeSubjects.has(card.subject) ? base * s.activeBoost : base;
+	return subject * recallFactor(card, recall, s, now);
+}
+
+/** Most overdue first. */
+export function sortByOverdue(cards: NoteCard[], recall: RecallStore, now = Date.now()): NoteCard[] {
+	const score = new Map(cards.map((c) => [c, overdue(recall.memory(c.path), now)]));
+	return [...cards].sort((a, b) => score.get(b)! - score.get(a)!);
 }
 
 /**
