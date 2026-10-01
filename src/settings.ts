@@ -21,6 +21,14 @@ export interface SlopSettings {
 	railSize: number;
 	/** Claude Code CLI binary that runs the improve-prose skill (desktop only). */
 	claudePath: string;
+	/** Daily goal in credits per active-semester subject. */
+	goalPerSubject: number;
+	/** How much more likely a fully overdue note is to surface; 0 turns overdue ranking off. */
+	overdueBoost: number;
+	/** Hide the hook and the note behind the question until "mutasd" is clicked. */
+	recallGate: boolean;
+	/** Show the owl's line under the chips. */
+	owl: boolean;
 }
 
 export const DEFAULT_SETTINGS: SlopSettings = {
@@ -32,6 +40,10 @@ export const DEFAULT_SETTINGS: SlopSettings = {
 	railThreshold: 80,
 	railSize: 10,
 	claudePath: defaultClaudePath(),
+	goalPerSubject: 3,
+	overdueBoost: 4,
+	recallGate: true,
+	owl: true,
 };
 
 /** Card size, font size and watch width: live layout sliders, used by the tab and the feed panel. */
@@ -102,6 +114,46 @@ export class SlopSettingTab extends PluginSettingTab {
 					}),
 				);
 		}
+
+		new Setting(containerEl).setName("Habit loop").setHeading();
+		new Setting(containerEl)
+			.setName("Daily goal per active subject")
+			.setDesc("Credits a day for each active-semester subject; a recall earns 1, a golden (overdue) one 3.")
+			.addSlider((sl) =>
+				sl.setLimits(1, 20, 1).setValue(s.goalPerSubject).setDynamicTooltip().onChange(async (v) => {
+					s.goalPerSubject = v;
+					await plugin.saveSettings();
+					plugin.refreshHabit();
+				}),
+			);
+		new Setting(containerEl)
+			.setName("Overdue boost")
+			.setDesc("A fully overdue note is this much more likely to appear in the random feed, plus one; 0 turns it off.")
+			.addSlider((sl) =>
+				sl.setLimits(0, 10, 1).setValue(s.overdueBoost).setDynamicTooltip().onChange(async (v) => {
+					s.overdueBoost = v;
+					await plugin.saveSettings();
+				}),
+			);
+		new Setting(containerEl)
+			.setName("Recall gate")
+			.setDesc("Show only the question on the watch page until you ask for the answer. Off: notes open revealed, grading still works.")
+			.addToggle((t) =>
+				t.setValue(s.recallGate).onChange(async (v) => {
+					s.recallGate = v;
+					await plugin.saveSettings();
+				}),
+			);
+		new Setting(containerEl)
+			.setName("Owl")
+			.setDesc("A passive-aggressive line under the feed's chips.")
+			.addToggle((t) =>
+				t.setValue(s.owl).onChange(async (v) => {
+					s.owl = v;
+					await plugin.saveSettings();
+					plugin.refreshHabit();
+				}),
+			);
 
 		new Setting(containerEl).setName("Subject weights (random feed)").setHeading();
 		for (const ch of plugin.model.channels) {

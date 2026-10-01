@@ -2,15 +2,17 @@
 // or each channel's hub sections in hub order ("Előadások").
 
 import { ItemView, ViewStateResult, WorkspaceLeaf, setIcon } from "obsidian";
-import { Chip, SortMode, chipMatches, randomWeight, sortCards, weightedShuffle } from "../feed";
+import { Chip, SortMode, chipMatches, randomWeight, recallFactor, sortByOverdue, sortCards, weightedShuffle } from "../feed";
 import type SlopTube from "../main";
 import { type Channel, type NoteCard, lectureNumber, topicOf } from "../model";
 import { addLayoutSettings } from "../settings";
-import { ThumbLoader, channelAvatar, renderCard, wantsNewTab } from "./card";
+import { ThumbLoader, channelAvatar, renderCard, renderRetention, wantsNewTab } from "./card";
 
 export const VIEW_FEED = "sloptube-feed";
 
 const PAGE = 24;
+/** At most this many golden cards per page, so the feed never turns into a wall of gold. */
+const GOLD_PER_PAGE = 6;
 
 type Mode = "random" | "channels" | "lectures";
 
@@ -31,6 +33,9 @@ export class FeedView extends ItemView {
 	private pager: IntersectionObserver | null = null;
 	/** The header's "⋯" view-settings panel; closed by any click outside it. */
 	private viewPanel: HTMLElement | null = null;
+	/** The header's streak widget and the owl's line; re-rendered in place after a grade. */
+	private streakEl: HTMLElement | null = null;
+	private owlEl: HTMLElement | null = null;
 
 	constructor(leaf: WorkspaceLeaf, private plugin: SlopTube) {
 		super(leaf);
@@ -92,6 +97,8 @@ export class FeedView extends ItemView {
 		this.loader = new ThumbLoader(el);
 		this.renderHeader(el.createDiv({ cls: "st-header" }));
 		this.renderChips(el.createDiv({ cls: "st-chips" }));
+		this.owlEl = el.createDiv({ cls: "st-owl" });
+		this.renderHabit();
 		const body = el.createDiv({ cls: "st-body" });
 		if (this.plugin.model.cards.length === 0) body.createDiv({ cls: "st-empty", text: "Indexelés… (a vault még töltődik)" });
 		else if (this.state.mode === "random") this.renderRandom(body);
@@ -104,6 +111,7 @@ export class FeedView extends ItemView {
 		const logo = h.createDiv({ cls: "st-logo" });
 		setIcon(logo.createSpan({ cls: "st-logo-icon" }), "play");
 		logo.createSpan({ text: "SlopTube" });
+		this.streakEl = h.createDiv({ cls: "st-streak" });
 
 		const tabs = h.createDiv({ cls: "st-tabs" });
 		const tab = (mode: Mode, label: string) => {
@@ -150,19 +158,56 @@ export class FeedView extends ItemView {
 		};
 		chip("all", "Mind");
 		if (this.plugin.model.activeSubjects.size) chip("active", "Aktív félév");
+		chip("due", "Esedékes");
 		chip("recent", "Legújabb");
 		for (const ch of this.plugin.model.channels) chip(`s:${ch.id}`, ch.id);
 	}
 
 	private filtered(cards: NoteCard[]): NoteCard[] {
-		return cards.filter((c) => chipMatches(this.state.chip, c, this.plugin.model));
+		const now = Date.now();
+		return cards.filter((c) => chipMatches(this.state.chip, c, this.plugin.model, this.plugin.recall, now));
+	}
+
+	/** Streak flame, today's credits against the goal, and the owl's line. */
+	renderHabit(): void {
+		const { streakEl, owlEl, plugin } = this;
+		if (!streakEl || !owlEl) return;
+		const st = plugin.streak();
+		const met = st.today >= st.goal;
+		streakEl.empty();
+		streakEl.toggleClass("is-met", met);
+		streakEl.setAttr("aria-label", `Sorozat: ${st.current} nap (legjobb: ${st.best}). Ma: ${st.today}/${st.goal} kredit.`);
+		streakEl.createSpan({ cls: "st-flame", text: "🔥" });
+		streakEl.createSpan({ cls: "st-streak-n", text: String(st.current) });
+		const ring = streakEl.createSvg("svg", { cls: "st-ring", attr: { viewBox: "0 0 20 20", width: 16, height: 16 } });
+		const r = 8, len = 2 * Math.PI * r;
+		ring.createSvg("circle", { cls: "st-ring-track", attr: { cx: 10, cy: 10, r } });
+		ring.createSvg("circle", {
+			cls: "st-ring-fill",
+			attr: { cx: 10, cy: 10, r, "stroke-dasharray": `${len * Math.min(1, st.today / st.goal)} ${len}`, transform: "rotate(-90 10 10)" },
+		});
+		streakEl.createSpan({ cls: "st-streak-today", text: `${st.today}/${st.goal}` });
+
+		const line = plugin.owlLine();
+		owlEl.toggle(line !== null);
+		owlEl.setText(line ? `🦉 ${line}` : "");
 	}
 
 	private renderRandom(body: HTMLElement): void {
-		const { model, settings } = this.plugin;
+		const { model, settings, recall } = this.plugin;
+		const now = Date.now();
 		const pool = this.filtered(model.cards);
 		// An explicit channel chip shows that channel even if its feed weight is 0.
-		const weight = this.state.chip.startsWith("s:") ? () => 1 : (c: NoteCard) => randomWeight(c, model, settings);
+		const weight = this.state.chip.startsWith("s:")
+			? (c: NoteCard) => recallFactor(c, recall, settings, now)
+			: (c: NoteCard) => randomWeight(c, model, settings, recall, now);
+		// Due: a finite review queue, most overdue first, no endless shuffle; feed weights don't apply.
+		if (this.state.chip === "due") {
+			if (!pool.length) body.createDiv({ cls: "st-empty", text: "Semmi sem esedékes. Gyanús." });
+			const grid = body.createDiv({ cls: "st-grid" });
+			for (const card of sortByOverdue(pool, recall, now)) this.card(grid, card);
+			return;
+		}
 		if (!pool.some((c) => weight(c) > 0)) {
 			body.createDiv({ cls: "st-empty", text: "Nincs itt semmi. Még." });
 			return;
@@ -173,9 +218,20 @@ export class FeedView extends ItemView {
 		// Endless: when a shuffle runs out, the next round reshuffles with a derived seed.
 		let round = 0, queue: NoteCard[] = [], rendered = 0;
 		const nextPage = () => {
-			for (let i = 0; i < PAGE; i++) {
+			// A golden card past the page's cap goes to the back of the queue, unless only gold is left.
+			let golden = 0, deferred = 0;
+			for (let i = 0; i < PAGE; ) {
 				if (!queue.length) queue = weightedShuffle(pool, weight, this.state.seed + round++);
-				this.card(grid, queue.shift()!);
+				const card = queue.shift()!;
+				const isGolden = this.plugin.isGolden(card, now);
+				if (isGolden && golden >= GOLD_PER_PAGE && deferred < queue.length) {
+					queue.push(card);
+					deferred++;
+					continue;
+				}
+				if (isGolden) golden++;
+				this.card(grid, card);
+				i++;
 			}
 			this.state.pages = ++rendered;
 		};
@@ -233,6 +289,7 @@ export class FeedView extends ItemView {
 		const name = h.createDiv({ cls: "st-shelf-name", text: ch.id });
 		if (this.plugin.model.activeSubjects.has(ch.id)) h.createSpan({ cls: "st-live", text: "ÉLŐ" });
 		h.createSpan({ cls: "st-shelf-count", text: `${count} videó` });
+		renderRetention(h, this.plugin.keptSeries(ch.id));
 		const hub = ch.hub;
 		if (hub) {
 			name.addClass("is-link");

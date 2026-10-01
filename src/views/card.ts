@@ -57,6 +57,7 @@ export function drawThumb(el: HTMLElement, plugin: SlopTube, card: NoteCard): vo
 	});
 	el.createSpan({ cls: "st-duration", text: formatDuration(card.words) });
 	if (card.isHub) el.createSpan({ cls: "st-badge", text: "CSATORNA" });
+	if (plugin.isGolden(card)) el.createSpan({ cls: "st-badge-due", text: "★ ESEDÉKES" });
 }
 
 export function renderCard(
@@ -68,6 +69,7 @@ export function renderCard(
 ): HTMLElement {
 	const bait = plugin.bait.get(card);
 	const el = parent.createDiv({ cls: "st-card" });
+	el.toggleClass("is-golden", plugin.isGolden(card));
 
 	const thumb = el.createDiv({ cls: "st-thumb" });
 	loader.add(thumb, () => drawThumb(thumb, plugin, card));
@@ -85,6 +87,25 @@ export function renderCard(
 	el.addEventListener("auxclick", (evt) => {
 		if (evt.button === 1) onOpen(card, evt);
 	});
+	return el;
+}
+
+/**
+ * A subject's kept % as a 30-day sparkline plus today's value; the last week turns red
+ * when it fell more than 5 points.
+ */
+export function renderRetention(parent: HTMLElement, series: number[]): HTMLElement {
+	const el = parent.createDiv({ cls: "st-retention" });
+	const W = 60, H = 16, max = Math.max(1, ...series);
+	const pt = (v: number, i: number) => `${((i / (series.length - 1)) * W).toFixed(1)},${(H - 1 - (v / max) * (H - 2)).toFixed(1)}`;
+	const svg = el.createSvg("svg", { cls: "st-spark", attr: { viewBox: `0 0 ${W} ${H}`, width: W, height: H } });
+	svg.createSvg("polyline", { attr: { points: series.map(pt).join(" ") } });
+	const week = series.slice(-8);
+	if (week[0] - week[week.length - 1] > 5) {
+		svg.createSvg("polyline", { cls: "is-falling", attr: { points: week.map((v, i) => pt(v, series.length - 8 + i)).join(" ") } });
+	}
+	el.createSpan({ text: `megtartva ${Math.round(series[series.length - 1] ?? 0)}%` });
+	el.setAttr("aria-label", "Átlagos felidézési esély a csatorna összes videójára, az elmúlt 30 napban");
 	return el;
 }
 

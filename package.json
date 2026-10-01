@@ -5,8 +5,9 @@
   "description": "A YouTube-style feed for an Obsidian wiki vault.",
   "scripts": {
     "dev": "node esbuild.config.mjs",
-    "build": "tsc --noEmit && node esbuild.config.mjs production",
-    "bait": "node scripts/merge-bait.mjs"
+    "build": "tsc --noEmit && npm test && node esbuild.config.mjs production",
+    "bait": "node scripts/merge-bait.mjs",
+    "test": "node --import ./test/ts-resolve.mjs --test test/*.test.ts"
   },
   "license": "MIT",
   "devDependencies": {

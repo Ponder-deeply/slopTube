@@ -4,6 +4,7 @@
 .sloptube {
 	--st-radius: 12px;
 	--st-red: #ff0033;
+	--st-gold: #f5b301;
 	/* Text sizes below are relative (em), so this scales all of them; thumbnail art uses cqw. */
 	font-size: calc(var(--st-font-scale, 1) * 1em);
 }
@@ -454,4 +455,129 @@
 
 .st-panel-link {
 	margin-top: 6px;
+}
+
+/* ---------- Habit loop: streak, owl, gold, recall gate, retention ---------- */
+
+.st-streak {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	padding: 2px 10px;
+	border-radius: 14px;
+	background: var(--background-modifier-hover);
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+/* Grey flame until today's goal is met. */
+.st-streak:not(.is-met) .st-flame {
+	filter: grayscale(1);
+	opacity: 0.6;
+}
+
+.st-streak-today {
+	color: var(--text-muted);
+	font-weight: 500;
+	font-size: 0.85em;
+}
+
+.st-ring circle {
+	fill: none;
+	stroke-width: 3;
+}
+
+.st-ring-track {
+	stroke: var(--background-modifier-border);
+}
+
+.st-ring-fill {
+	stroke: var(--st-gold);
+	stroke-linecap: round;
+}
+
+.st-owl {
+	padding: 0 20px 12px;
+	color: var(--text-muted);
+	font-style: italic;
+}
+
+.st-card.is-golden .st-thumb {
+	box-shadow: 0 0 0 3px var(--st-gold);
+}
+
+.st-badge-due {
+	position: absolute;
+	right: 6px;
+	top: 6px;
+	padding: 1px 5px;
+	border-radius: 4px;
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1.5;
+	color: #000;
+	background: var(--st-gold);
+}
+
+.st-gate {
+	margin-top: 10px;
+}
+
+.st-gate-prompt {
+	color: var(--text-muted);
+}
+
+.st-gate-actions {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-top: 10px;
+}
+
+.st-gate-reveal {
+	flex: 1;
+}
+
+.sloptube .st-gate-skip {
+	background: none;
+	box-shadow: none;
+	color: var(--text-muted);
+	text-decoration: underline;
+}
+
+.st-grade {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 10px;
+}
+
+.st-grade-q {
+	color: var(--text-muted);
+	margin-right: 4px;
+}
+
+.st-grade button.is-active {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.st-retention {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--text-muted);
+	font-size: 0.85em;
+}
+
+.st-spark polyline {
+	fill: none;
+	stroke: var(--text-muted);
+	stroke-width: 1.25;
+	stroke-linejoin: round;
+}
+
+.st-spark polyline.is-falling {
+	stroke: var(--st-red);
 }
