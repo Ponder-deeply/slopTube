@@ -1,4 +1,4 @@
-// Plugin settings and their tab.
+// Plugin settings, their tab, and the view sliders shared with the feed's "⋯" panel.
 
 import { App, Platform, PluginSettingTab, Setting } from "obsidian";
 import { defaultClaudePath } from "./claude";
@@ -34,6 +34,25 @@ export const DEFAULT_SETTINGS: SlopSettings = {
 	claudePath: defaultClaudePath(),
 };
 
+/** Card size, font size and watch width: live layout sliders, used by the tab and the feed panel. */
+export function addLayoutSettings(containerEl: HTMLElement, plugin: SlopTube): void {
+	const s = plugin.settings;
+	const slider = (name: string, desc: string, min: number, max: number, step: number, key: "cardWidth" | "fontScale" | "watchWidth") =>
+		new Setting(containerEl)
+			.setName(name)
+			.setDesc(desc)
+			.addSlider((sl) =>
+				sl.setLimits(min, max, step).setValue(s[key]).setDynamicTooltip().onChange(async (v) => {
+					s[key] = v;
+					plugin.applyLayout();
+					await plugin.saveSettings();
+				}),
+			);
+	slider("Card size", "Minimum card width in pixels; smaller means more columns.", 160, 520, 20, "cardWidth");
+	slider("Font size", "Text size in percent; thumbnail art keeps its size.", 70, 160, 5, "fontScale");
+	slider("Watch page width", "Maximum width of the watch page's column in pixels.", 600, 1600, 20, "watchWidth");
+}
+
 export class SlopSettingTab extends PluginSettingTab {
 	constructor(app: App, private plugin: SlopTube) {
 		super(app, plugin);
@@ -53,36 +72,7 @@ export class SlopSettingTab extends PluginSettingTab {
 					await plugin.saveSettings();
 				}),
 			);
-		new Setting(containerEl)
-			.setName("Card size")
-			.setDesc("Minimum card width in pixels; smaller means more columns.")
-			.addSlider((sl) =>
-				sl.setLimits(160, 520, 20).setValue(s.cardWidth).setDynamicTooltip().onChange(async (v) => {
-					s.cardWidth = v;
-					plugin.applyLayout();
-					await plugin.saveSettings();
-				}),
-			);
-		new Setting(containerEl)
-			.setName("Font size")
-			.setDesc("Text size in percent; thumbnail art keeps its size.")
-			.addSlider((sl) =>
-				sl.setLimits(70, 160, 5).setValue(s.fontScale).setDynamicTooltip().onChange(async (v) => {
-					s.fontScale = v;
-					plugin.applyLayout();
-					await plugin.saveSettings();
-				}),
-			);
-		new Setting(containerEl)
-			.setName("Watch page width")
-			.setDesc("Maximum width of the watch page's column in pixels.")
-			.addSlider((sl) =>
-				sl.setLimits(600, 1600, 20).setValue(s.watchWidth).setDynamicTooltip().onChange(async (v) => {
-					s.watchWidth = v;
-					plugin.applyLayout();
-					await plugin.saveSettings();
-				}),
-			);
+		addLayoutSettings(containerEl, plugin);
 		new Setting(containerEl)
 			.setName("Related rail trigger distance")
 			.setDesc("How close (px) the mouse must get to the bottom of the watch page to show related notes.")

@@ -6,6 +6,7 @@ import { BaitStore } from "./bait";
 import { ProseRunner } from "./claude";
 import { randomWeight, weightedShuffle } from "./feed";
 import { type NoteCard, VaultModel } from "./model";
+import { decorateNewTabs, undecorateNewTabs } from "./newtab";
 import { DEFAULT_SETTINGS, SlopSettingTab, SlopSettings } from "./settings";
 import { FeedView, VIEW_FEED } from "./views/FeedView";
 import { VIEW_WATCH, WatchView } from "./views/WatchView";
@@ -42,10 +43,15 @@ export default class SlopTube extends Plugin {
 			},
 		});
 		this.addCommand({ id: "random-video", name: "Random video", callback: () => this.randomVideo() });
+		// Both events: an empty tab can refill its action list after the layout change fired.
+		this.registerEvent(this.app.workspace.on("layout-change", () => decorateNewTabs(this)));
+		this.registerEvent(this.app.workspace.on("active-leaf-change", () => decorateNewTabs(this)));
+		this.register(undecorateNewTabs);
 		this.addSettingTab(new SlopSettingTab(this.app, this));
 
 		this.app.workspace.onLayoutReady(() => {
 			this.rebuildModel();
+			decorateNewTabs(this);
 			this.registerEvent(this.app.metadataCache.on("resolved", debounce(() => this.rebuildModel(), 1000, true)));
 		});
 	}
@@ -64,6 +70,13 @@ export default class SlopTube extends Plugin {
 		document.body.style.setProperty("--st-card-w", `${this.settings.cardWidth}px`);
 		document.body.style.setProperty("--st-watch-w", `${this.settings.watchWidth}px`);
 		document.body.style.setProperty("--st-font-scale", `${this.settings.fontScale / 100}`);
+	}
+
+	/** Opens Obsidian's settings on this plugin's tab (`app.setting` is not in the public API). */
+	openSettings(): void {
+		const setting = (this.app as unknown as { setting: { open(): void; openTabById(id: string): void } }).setting;
+		setting.open();
+		setting.openTabById(this.manifest.id);
 	}
 
 	async openFeed(leaf?: WorkspaceLeaf): Promise<void> {
@@ -108,10 +121,11 @@ export default class SlopTube extends Plugin {
 			.filter((v): v is WatchView => v instanceof WatchView && v.getState().path === path);
 	}
 
-	private randomVideo(): void {
+	/** Plays a weighted-random note, in `leaf` or else the active one. */
+	randomVideo(leaf?: WorkspaceLeaf): void {
 		const [card] = weightedShuffle(this.model.cards, (c) => randomWeight(c, this.model, this.settings), Date.now());
 		if (!card) return void new Notice("SlopTube: nincs videó.");
-		void this.openWatch(card.path, this.app.workspace.getLeaf(false));
+		void this.openWatch(card.path, leaf ?? this.app.workspace.getLeaf(false));
 	}
 
 	async loadSettings(): Promise<void> {

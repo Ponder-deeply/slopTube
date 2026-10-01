@@ -64,13 +64,18 @@ const GENERIC_HEADINGS = new Set(["Fogalomlapok", "Kapocs", "Tartalom", "Tárgyk
  * A hub heading reduced to its topic: "12–13. előadás — Alkalmazási réteg" → "Alkalmazási réteg",
  * "V. Kötelmi jog" → "Kötelmi jog", "LU-felbontás (3. előadás)" → "LU-felbontás".
  */
-function topicOf(heading: string): string {
+export function topicOf(heading: string): string {
 	const parts = heading.split(/\s+[—–]\s+/);
 	const topic = parts.length > 1 && /előadás/i.test(parts[0]) ? parts.slice(1).join(" — ") : heading;
 	return topic
 		.replace(/^(?:[IVX]+|\d+)\.\s+/, "")
 		.replace(/\s*\([^)]*előadás[^)]*\)\s*$/i, "")
 		.trim();
+}
+
+/** The lecture number a hub heading names ("3. előadás — …", "LU (3. előadás)", "12–13. előadás"), or null. */
+export function lectureNumber(heading: string): string | null {
+	return heading.match(/(\d+(?:[–-]\d+)?)\.\s*előadás/i)?.[1] ?? null;
 }
 
 function gcd(a: number, b: number): number {

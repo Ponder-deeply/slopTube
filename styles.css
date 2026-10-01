@@ -75,6 +75,9 @@
 }
 
 .st-tools {
+	display: flex;
+	align-items: center;
+	gap: 6px;
 	margin-left: auto;
 }
 
@@ -381,22 +384,46 @@
 /* ---------- Lectures ("Előadások") ---------- */
 
 .st-lecture-channel {
-	margin-bottom: 44px;
+	--st-accent: oklch(0.62 0.16 var(--st-hue, 0));
+	margin-bottom: 48px;
+	padding-top: 16px;
+	border-top: 1px solid var(--background-modifier-border);
 }
 
 .st-lecture {
-	margin: 0 0 24px 48px;
+	margin-bottom: 26px;
 }
 
+/* A section band: the channel's colour as a left bar and as the lecture-number badge. */
 .st-lecture-header {
 	display: flex;
-	align-items: baseline;
+	align-items: center;
 	gap: 10px;
-	margin-bottom: 10px;
+	margin-bottom: 12px;
+	padding: 8px 14px;
+	border-left: 4px solid var(--st-accent);
+	border-radius: 0 8px 8px 0;
+	background: var(--background-secondary);
+}
+
+.st-lecture-badge {
+	padding: 2px 8px;
+	border-radius: 4px;
+	background: var(--st-accent);
+	color: #fff;
+	font-size: 0.75em;
+	font-weight: 800;
+	letter-spacing: 0.04em;
+	white-space: nowrap;
 }
 
 .st-lecture-name {
-	font-weight: 600;
+	font-size: 1.1em;
+	font-weight: 700;
+}
+
+.st-lecture-header .st-shelf-count {
+	margin-left: auto;
 }
 
 /* ---------- Bait edit dialog ---------- */
@@ -408,4 +435,23 @@
 
 .st-edit-warn {
 	color: var(--text-error);
+}
+
+/* ---------- Feed "⋯" view panel ---------- */
+
+.st-view-panel {
+	position: absolute;
+	top: 100%;
+	right: 20px;
+	z-index: 10;
+	width: min(420px, calc(100% - 40px));
+	padding: 4px 14px 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 10px;
+	background: var(--background-primary);
+	box-shadow: var(--shadow-l);
+}
+
+.st-panel-link {
+	margin-top: 6px;
 }

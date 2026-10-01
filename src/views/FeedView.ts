@@ -4,7 +4,8 @@
 import { ItemView, ViewStateResult, WorkspaceLeaf, setIcon } from "obsidian";
 import { Chip, SortMode, chipMatches, randomWeight, sortCards, weightedShuffle } from "../feed";
 import type SlopTube from "../main";
-import type { Channel, NoteCard } from "../model";
+import { type Channel, type NoteCard, lectureNumber, topicOf } from "../model";
+import { addLayoutSettings } from "../settings";
 import { ThumbLoader, channelAvatar, renderCard, wantsNewTab } from "./card";
 
 export const VIEW_FEED = "sloptube-feed";
@@ -28,6 +29,8 @@ export class FeedView extends ItemView {
 	private state: FeedState = { mode: "random", chip: "all", seed: Date.now(), sort: "newest", pages: 1, scroll: 0 };
 	private loader: ThumbLoader | null = null;
 	private pager: IntersectionObserver | null = null;
+	/** The header's "⋯" view-settings panel; closed by any click outside it. */
+	private viewPanel: HTMLElement | null = null;
 
 	constructor(leaf: WorkspaceLeaf, private plugin: SlopTube) {
 		super(leaf);
@@ -55,6 +58,9 @@ export class FeedView extends ItemView {
 
 	override async onOpen(): Promise<void> {
 		this.contentEl.addClass("sloptube", "st-feed");
+		this.registerDomEvent(document, "click", (evt) => {
+			if (this.viewPanel?.isShown() && !this.viewPanel.contains(evt.target as Node)) this.viewPanel.hide();
+		});
 		this.render();
 	}
 
@@ -121,6 +127,19 @@ export class FeedView extends ItemView {
 			sel.value = this.state.sort;
 			sel.onchange = () => this.update({ sort: sel.value as SortMode });
 		}
+
+		const more = tools.createEl("button", { cls: "st-more clickable-icon", attr: { "aria-label": "Nézet beállításai" } });
+		setIcon(more, "more-horizontal");
+		const panel = h.createDiv({ cls: "st-view-panel" });
+		panel.hide();
+		addLayoutSettings(panel, this.plugin);
+		const all = panel.createEl("button", { cls: "st-panel-link", text: "Összes beállítás…" });
+		all.onclick = () => this.plugin.openSettings();
+		more.onclick = (evt) => {
+			evt.stopPropagation();
+			panel.toggle(!panel.isShown());
+		};
+		this.viewPanel = panel;
 	}
 
 	private renderChips(row: HTMLElement): void {
@@ -194,11 +213,14 @@ export class FeedView extends ItemView {
 			const sections = ch.sections.map((s) => ({ heading: s.heading, cards: this.filtered(s.cards) })).filter((s) => s.cards.length > 0);
 			if (!sections.length) continue;
 			const block = body.createDiv({ cls: "st-lecture-channel" });
+			block.style.setProperty("--st-hue", String(ch.hue));
 			this.renderShelfHeader(block.createDiv({ cls: "st-shelf-header" }), ch, sections.reduce((n, s) => n + s.cards.length, 0));
 			for (const s of sections) {
 				const shelf = block.createDiv({ cls: "st-shelf st-lecture" });
 				const h = shelf.createDiv({ cls: "st-lecture-header" });
-				h.createSpan({ cls: "st-lecture-name", text: s.heading });
+				const nr = lectureNumber(s.heading);
+				if (nr) h.createSpan({ cls: "st-lecture-badge", text: `${nr}. EA` });
+				h.createSpan({ cls: "st-lecture-name", text: nr ? topicOf(s.heading) : s.heading });
 				h.createSpan({ cls: "st-shelf-count", text: `${s.cards.length} videó` });
 				const row = shelf.createDiv({ cls: "st-shelf-row" });
 				for (const card of s.cards) this.card(row, card);

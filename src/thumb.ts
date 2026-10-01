@@ -1,7 +1,7 @@
 // Deterministic ASCII-art thumbnails. Per note (seeded by path): a background field,
 // a character ramp and a color scheme built on the channel's hue; a caption strip naming
 // the channel and the note's section; block-letter thumbText on a cleared label; and the
-// genre's red circle / arrow.
+// genre's red circle / arrow; a footer strip with the note's real title, bottom left.
 
 import { foldUpper, hash, pick, rng } from "./util";
 
@@ -16,6 +16,8 @@ export interface ThumbSpec {
 	/** Caption strip: channel id and the hub section the note belongs to. */
 	channel: string;
 	section: string | null;
+	/** The note's own title (its H1), shown bottom left under the clickbait. */
+	title: string;
 	hasMath: boolean;
 	hasCode: boolean;
 	text: string;
@@ -39,6 +41,8 @@ const CODE_TOKENS = ["fn", "let", "=>", "{", "}", "λ", "::", "->", "if", "map",
 const SCHEMES = [0, 35, 150, 180, 210, -120];
 const TEXT_COLORS = ["#ffe14d", "#ffffff", "#5ff6ff", "#ff5fd2", "#b6ff4f"];
 const RED = "#ff3b3b";
+/** Columns kept free at the footer's right end for the HTML duration badge. */
+const FOOTER_BADGE_COLS = 9;
 
 // 3×5 block font, rows concatenated. Accents are folded before lookup (Á → A).
 const FONT: Record<string, string> = {
@@ -158,6 +162,16 @@ function drawCaption(grid: Grid, spec: ThumbSpec, pal: Palette): number {
 	return 1;
 }
 
+/** Footer strip, bottom left: the note's real title, clear of the duration badge on the right. */
+function drawFooter(grid: Grid, spec: ThumbSpec): number {
+	const room = COLS - FOOTER_BADGE_COLS;
+	let label = ` ${spec.title} `;
+	if (label.length > room) label = `${label.slice(0, room - 2)}… `;
+	const y = ROWS - 1;
+	[...label].forEach((ch, x) => (grid[y][x] = { ch, fg: "#ffffff", bg: "rgba(0, 0, 0, 0.78)" }));
+	return 1;
+}
+
 /** Greedy word wrap at the largest horizontal scale that fits in `maxLines`. */
 function layoutText(text: string, maxLines: number): { lines: string[]; scale: number } {
 	const words = foldUpper(text)
@@ -182,11 +196,11 @@ function layoutText(text: string, maxLines: number): { lines: string[]; scale: n
 
 /**
  * Block letters on a cleared label box per line (background noise never leaks between
- * strokes), placed in rows [top, ROWS). Returns the reserved area for decorations to avoid.
+ * strokes), placed in rows [top, bottom). Returns the reserved area for decorations to avoid.
  */
-function drawText(grid: Grid, text: string, pal: Palette, top: number, r: Rand): boolean[][] {
+function drawText(grid: Grid, text: string, pal: Palette, top: number, bottom: number, r: Rand): boolean[][] {
 	const reserved = grid.map((row) => row.map(() => false));
-	const room = ROWS - top;
+	const room = bottom - top;
 	// Each line is 5 rows + 1 gap; the label box adds a row of margin above and below.
 	const { lines, scale } = layoutText(text, Math.floor((room - 1) / 6));
 	const advance = 3 * scale + 1;
@@ -196,7 +210,7 @@ function drawText(grid: Grid, text: string, pal: Palette, top: number, r: Rand):
 	const y0 = top + 1 + (slack <= 0 ? 0 : pick([Math.floor(slack / 2), 0, slack], r));
 	const leftAligned = r() < 0.35;
 	const set = (x: number, y: number, cell: Cell) => {
-		if (x < 0 || x >= COLS || y < top || y >= ROWS) return;
+		if (x < 0 || x >= COLS || y < top || y >= bottom) return;
 		grid[y][x] = cell;
 		reserved[y][x] = true;
 	};
@@ -217,19 +231,19 @@ function drawText(grid: Grid, text: string, pal: Palette, top: number, r: Rand):
 	return reserved;
 }
 
-/** The genre's red circle and arrow, kept off the text and caption. */
-function decorate(grid: Grid, reserved: boolean[][], top: number, r: Rand): void {
+/** The genre's red circle and arrow, kept off the text, caption and footer. */
+function decorate(grid: Grid, reserved: boolean[][], top: number, bottom: number, r: Rand): void {
 	const put = (x: number, y: number, ch: string) => {
-		if (x >= 0 && x < COLS && y >= top && y < ROWS && !reserved[y][x]) grid[y][x] = { ch, fg: RED };
+		if (x >= 0 && x < COLS && y >= top && y < bottom && !reserved[y][x]) grid[y][x] = { ch, fg: RED };
 	};
 	if (r() < 0.35) {
 		const [rx, ry] = [5 + r() * 4, 2.5 + r() * 1.5];
 		const cx = r() < 0.5 ? rx + 1 : COLS - rx - 2;
-		const cy = r() < 0.5 ? top + ry + 1 : ROWS - ry - 2;
+		const cy = r() < 0.5 ? top + ry + 1 : bottom - ry - 2;
 		for (let t = 0; t < Math.PI * 2; t += 0.12) put(Math.round(cx + rx * Math.cos(t)), Math.round(cy + ry * Math.sin(t)), "O");
 	}
 	if (r() < 0.3) {
-		const y = ROWS - 2 - Math.floor(r() * 3);
+		const y = bottom - 2 - Math.floor(r() * 3);
 		[..."=====>"].forEach((ch, i) => put(1 + i, y, ch));
 	}
 }
@@ -242,7 +256,8 @@ export function composeThumb(spec: ThumbSpec): { grid: Grid; bg: string } {
 	const pal = palette(spec.hue, r);
 	const grid = background(spec, pal, r);
 	const top = drawCaption(grid, spec, pal);
-	decorate(grid, drawText(grid, spec.text, pal, top, r), top, r);
+	const bottom = ROWS - drawFooter(grid, spec);
+	decorate(grid, drawText(grid, spec.text, pal, top, bottom, r), top, bottom, r);
 	return { grid, bg: pal.bg };
 }
 

@@ -40,6 +40,13 @@ Dropped:
 
 ## Lessons from review
 
+- **Concrete over clever** (dimatii rebake, 2026-09-30). The title names the
+  concept first, then gives a concrete question or claim about it, using the
+  note's own example: *Euler–Fermat: a 3¹¹¹ utolsó jegye fejben*, not
+  *Mi a 3¹¹¹ utolsó számjegye?*. Keep it snappy, informational and short. CAPS
+  and ironic emoji are rarely needed. This shape wins over strict format
+  rotation.
+
 - **No ambiguous words.** *Megfordítva: egy sor* reads as "a series"; pick words
   with one reading in a math context.
 - **Cryptic is not curious.** The viewer must understand the question without

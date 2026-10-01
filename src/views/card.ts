@@ -50,6 +50,7 @@ export function drawThumb(el: HTMLElement, plugin: SlopTube, card: NoteCard): vo
 		hue: plugin.model.hue(card.subject),
 		channel: card.subject,
 		section: card.section,
+		title: card.title,
 		hasMath: card.hasMath,
 		hasCode: card.hasCode,
 		text: bait.thumbText,
