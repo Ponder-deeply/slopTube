@@ -26,7 +26,6 @@ export interface SlopSettings {
 	/** How much more likely a fully overdue note is to surface; 0 turns overdue ranking off. */
 	overdueBoost: number;
 	/** Hide the hook and the note behind the question until "mutasd" is clicked. */
-	recallGate: boolean;
 	/** Show the owl's line under the chips. */
 	owl: boolean;
 }
@@ -42,7 +41,6 @@ export const DEFAULT_SETTINGS: SlopSettings = {
 	claudePath: defaultClaudePath(),
 	goalPerSubject: 3,
 	overdueBoost: 4,
-	recallGate: true,
 	owl: true,
 };
 
@@ -118,7 +116,7 @@ export class SlopSettingTab extends PluginSettingTab {
 		new Setting(containerEl).setName("Habit loop").setHeading();
 		new Setting(containerEl)
 			.setName("Daily goal per active subject")
-			.setDesc("Credits a day for each active-semester subject; a recall earns 1, a golden (overdue) one 3.")
+			.setDesc("Credits a day for each active-semester subject; a note earns 1 once all its due gates are graded in a day, 3 if one was golden.")
 			.addSlider((sl) =>
 				sl.setLimits(1, 20, 1).setValue(s.goalPerSubject).setDynamicTooltip().onChange(async (v) => {
 					s.goalPerSubject = v;
@@ -132,15 +130,6 @@ export class SlopSettingTab extends PluginSettingTab {
 			.addSlider((sl) =>
 				sl.setLimits(0, 10, 1).setValue(s.overdueBoost).setDynamicTooltip().onChange(async (v) => {
 					s.overdueBoost = v;
-					await plugin.saveSettings();
-				}),
-			);
-		new Setting(containerEl)
-			.setName("Recall gate")
-			.setDesc("Show only the question on the watch page until you ask for the answer. Off: notes open revealed, grading still works.")
-			.addToggle((t) =>
-				t.setValue(s.recallGate).onChange(async (v) => {
-					s.recallGate = v;
 					await plugin.saveSettings();
 				}),
 			);

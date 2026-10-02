@@ -277,6 +277,7 @@ export class FeedView extends ItemView {
 				const nr = lectureNumber(s.heading);
 				if (nr) h.createSpan({ cls: "st-lecture-badge", text: `${nr}. EA` });
 				h.createSpan({ cls: "st-lecture-name", text: nr ? topicOf(s.heading) : s.heading });
+				if (nr) this.renderReflections(h, ch.id, s.heading);
 				h.createSpan({ cls: "st-shelf-count", text: `${s.cards.length} videó` });
 				const row = shelf.createDiv({ cls: "st-shelf-row" });
 				for (const card of s.cards) this.card(row, card);
@@ -284,12 +285,23 @@ export class FeedView extends ItemView {
 		}
 	}
 
+	/** Next to a lecture's title: its reflections as numbered chips (the title shows on hover), and the button for a new one. */
+	private renderReflections(h: HTMLElement, subject: string, lecture: string): void {
+		const box = h.createSpan({ cls: "st-reflections" });
+		this.plugin.model.reflections(subject, lecture).forEach((file, i) => {
+			const chip = box.createEl("button", { cls: "st-reflection", text: String(i + 1), attr: { "aria-label": file.basename } });
+			chip.onclick = () => void this.plugin.app.workspace.getLeaf("tab").openFile(file);
+		});
+		const write = box.createEl("button", { cls: "st-reflect", text: "Reflexió írása" });
+		write.onclick = () => this.plugin.writeReflection(subject, lecture);
+	}
+
 	private renderShelfHeader(h: HTMLElement, ch: Channel, count: number): void {
 		channelAvatar(h, this.plugin, ch.id);
 		const name = h.createDiv({ cls: "st-shelf-name", text: ch.id });
 		if (this.plugin.model.activeSubjects.has(ch.id)) h.createSpan({ cls: "st-live", text: "ÉLŐ" });
 		h.createSpan({ cls: "st-shelf-count", text: `${count} videó` });
-		renderRetention(h, this.plugin.keptSeries(ch.id));
+		renderRetention(h, this.plugin.retention(ch.id));
 		const hub = ch.hub;
 		if (hub) {
 			name.addClass("is-link");

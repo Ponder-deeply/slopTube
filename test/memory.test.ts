@@ -34,7 +34,7 @@ test("a note known on day 0 turns due at about day 1, not before", () => {
 });
 
 test("kept % counts unrecalled notes as 0 and decays", () => {
-	const histories = [[{ t: T0, g: 1 as const }], []];
+	const histories = [[[{ t: T0, g: 1 as const }]], [[]]];
 	assert.equal(kept(histories, T0), 50);
 	assert.ok(kept(histories, at(2)) < 26);
 	const series = keptSeries(histories, at(5), 7);
@@ -43,13 +43,21 @@ test("kept % counts unrecalled notes as 0 and decays", () => {
 	assert.ok(series.at(-1)! < series[5]);
 });
 
-test("credits: 3 only for a recall of a note that was overdue at the time", () => {
+test("kept %: every note weighs the same, whatever its gate count", () => {
+	const known = [{ t: T0, g: 1 as const }];
+	const one = [[known]]; // 1 gate, graded
+	const three = [[[], [], []]]; // 3 gates, none graded
+	assert.equal(kept([...one, ...three], T0), 50); // gate-weighted would be 25
+	assert.equal(kept([[known, []], ...three], T0), 25); // a half-graded note counts half
+});
+
+test("credits: 3 for a first grade or a recall of a gate that was overdue at the time", () => {
 	const events = [
 		{ t: T0, g: 1 as const },
 		{ t: at(0.5), g: 1 as const },
 		{ t: at(10), g: 0 as const },
 	];
-	assert.deepEqual(credits(events), [1, 1, 3]);
+	assert.deepEqual(credits(events), [3, 1, 3]); // a first grade is always golden
 });
 
 test("day keys follow the local calendar", () => {

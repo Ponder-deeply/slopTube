@@ -2,6 +2,7 @@
 
 import { Keymap } from "obsidian";
 import type SlopTube from "../main";
+import type { Retention } from "../main";
 import type { NoteCard } from "../model";
 import { renderThumb } from "../thumb";
 import { formatAge, formatDuration, formatViews, hash } from "../util";
@@ -57,7 +58,7 @@ export function drawThumb(el: HTMLElement, plugin: SlopTube, card: NoteCard): vo
 	});
 	el.createSpan({ cls: "st-duration", text: formatDuration(card.words) });
 	if (card.isHub) el.createSpan({ cls: "st-badge", text: "CSATORNA" });
-	if (plugin.isGolden(card)) el.createSpan({ cls: "st-badge-due", text: "★ ESEDÉKES" });
+	if (plugin.isGolden(card)) el.createSpan({ cls: "st-badge-due", text: plugin.recall.hasHistory(card.path) ? "★ ESEDÉKES" : "★ ÚJ" });
 }
 
 export function renderCard(
@@ -91,21 +92,30 @@ export function renderCard(
 }
 
 /**
- * A subject's kept % as a 30-day sparkline plus today's value; the last week turns red
- * when it fell more than 5 points.
+ * A subject's retention: a bar over all its notes (kept / studied but faded / not studied yet),
+ * its two main figures, and, once something is studied, a 30-day sparkline of how well the
+ * studied notes are remembered (red when the last week fell more than 5 points).
  */
-export function renderRetention(parent: HTMLElement, series: number[]): HTMLElement {
+export function renderRetention(parent: HTMLElement, { series, kept, studied }: Retention): HTMLElement {
 	const el = parent.createDiv({ cls: "st-retention" });
-	const W = 60, H = 16, max = Math.max(1, ...series);
-	const pt = (v: number, i: number) => `${((i / (series.length - 1)) * W).toFixed(1)},${(H - 1 - (v / max) * (H - 2)).toFixed(1)}`;
-	const svg = el.createSvg("svg", { cls: "st-spark", attr: { viewBox: `0 0 ${W} ${H}`, width: W, height: H } });
-	svg.createSvg("polyline", { attr: { points: series.map(pt).join(" ") } });
-	const week = series.slice(-8);
-	if (week[0] - week[week.length - 1] > 5) {
-		svg.createSvg("polyline", { cls: "is-falling", attr: { points: week.map((v, i) => pt(v, series.length - 8 + i)).join(" ") } });
+	if (series.length) {
+		const W = 60, H = 16;
+		const pt = (v: number, i: number) => `${((i / (series.length - 1)) * W).toFixed(1)},${(H - 1 - (v / 100) * (H - 2)).toFixed(1)}`;
+		const svg = el.createSvg("svg", { cls: "st-spark", attr: { viewBox: `0 0 ${W} ${H}`, width: W, height: H } });
+		svg.createSvg("polyline", { attr: { points: series.map(pt).join(" ") } });
+		const week = series.slice(-8);
+		if (week[0] - week[week.length - 1] > 5) {
+			svg.createSvg("polyline", { cls: "is-falling", attr: { points: week.map((v, i) => pt(v, series.length - 8 + i)).join(" ") } });
+		}
+		svg.createSvg("title").textContent = "A tanult jegyzetek átlagos felidézési esélye, az elmúlt 30 napban";
 	}
-	el.createSpan({ text: `megtartva ${Math.round(series[series.length - 1] ?? 0)}%` });
-	el.setAttr("aria-label", "Átlagos felidézési esély a csatorna összes videójára, az elmúlt 30 napban");
+	const keptPct = Math.round(kept);
+	const known = Math.max(keptPct, Math.round(studied));
+	const bar = el.createDiv({ cls: "st-share" });
+	bar.createDiv({ cls: "st-share-kept" }).style.width = `${keptPct}%`;
+	bar.createDiv({ cls: "st-share-faded" }).style.width = `${known - keptPct}%`;
+	el.createSpan({ text: `megtartva ${keptPct}% · tanult ${known}%` });
+	el.setAttr("aria-label", `A csatorna jegyzeteiből ${keptPct}% megtartva, ${known - keptPct}% tanult de elhalványult, ${100 - known}% még nem tanult`);
 	return el;
 }
 
