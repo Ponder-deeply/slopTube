@@ -58,30 +58,42 @@ export function dueAt(m: Memory): number {
 	return m.last + m.s * Math.log2(1 / DUE_R) * DAY;
 }
 
-/** Kept %, 0–100: mean recall probability over a subject's notes, unrecalled notes counting 0. */
-export function kept(histories: readonly (readonly RecallEvent[])[], now: number): number {
-	if (!histories.length) return 0;
+/** One note's gate histories (an ungraded gate is an empty list). */
+export type NoteHistory = readonly (readonly RecallEvent[])[];
+
+/**
+ * Kept %, 0–100: mean over a subject's notes of each note's retention. A note's retention is
+ * the mean recall probability of its gates, ungraded gates counting 0, so every note weighs the
+ * same however many gates it has.
+ */
+export function kept(notes: readonly NoteHistory[], now: number): number {
+	if (!notes.length) return 0;
 	let sum = 0;
-	for (const events of histories) {
-		const m = replay(events, now);
-		if (m) sum += recallProb(m, now);
+	for (const gates of notes) {
+		if (!gates.length) continue;
+		let note = 0;
+		for (const events of gates) {
+			const m = replay(events, now);
+			if (m) note += recallProb(m, now);
+		}
+		sum += note / gates.length;
 	}
-	return (100 * sum) / histories.length;
+	return (100 * sum) / notes.length;
 }
 
 /** Kept % at the end of each of the last `days` local days, today last (evaluated at `now`). */
-export function keptSeries(histories: readonly (readonly RecallEvent[])[], now: number, days = 30): number[] {
+export function keptSeries(notes: readonly NoteHistory[], now: number, days = 30): number[] {
 	const out: number[] = [];
-	for (let i = days - 1; i >= 1; i--) out.push(kept(histories, endOfDay(now, -i)));
-	out.push(kept(histories, now));
+	for (let i = days - 1; i >= 1; i--) out.push(kept(notes, endOfDay(now, -i)));
+	out.push(kept(notes, now));
 	return out;
 }
 
-/** Credits each event earned: GOLD_CREDIT when the note was overdue just before it. */
+/** Credits each event earned: GOLD_CREDIT when the gate was due just before it (a first grade always is). */
 export function credits(events: readonly RecallEvent[]): number[] {
 	let m: Memory | null = null;
 	return events.map((e) => {
-		const c = overdue(m, e.t) > 0 ? GOLD_CREDIT : CREDIT;
+		const c = !m || overdue(m, e.t) > 0 ? GOLD_CREDIT : CREDIT;
 		m = step(m, e);
 		return c;
 	});

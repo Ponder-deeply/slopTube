@@ -9,10 +9,13 @@
 	--st-ring: 0 0 0 2px var(--background-primary), 0 0 0 4px var(--interactive-accent);
 	/* Text sizes below are relative (em), so this scales all of them; thumbnail art uses cqw. */
 	font-size: calc(var(--st-font-scale, 1) * 1em);
+	/* The note text font (Lexend in this vault), like the rendered notes, not the interface font. */
+	font-family: var(--font-text);
 }
 
-/* Obsidian gives buttons a fixed px size; scale it with the rest. */
+/* Obsidian gives buttons a fixed px size and the interface font; follow the rest instead. */
 .sloptube button {
+	font-family: inherit;
 	font-size: calc(var(--font-ui-small) * var(--st-font-scale, 1));
 }
 
@@ -604,11 +607,14 @@
 }
 
 .st-gate {
-	margin-top: 10px;
+	margin-top: 14px;
+	padding: 10px 14px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
 }
 
-.st-gate-prompt {
-	color: var(--text-muted);
+.st-gate-label {
+	font-weight: 600;
 }
 
 .st-gate-actions {
@@ -618,15 +624,16 @@
 	margin-top: 10px;
 }
 
+.st-gate-actions:empty {
+	display: none;
+}
+
 .st-gate-reveal {
 	flex: 1;
 }
 
-.sloptube .st-gate-skip {
-	background: none;
-	box-shadow: none;
-	color: var(--text-muted);
-	text-decoration: underline;
+.st-study {
+	margin-top: 10px;
 }
 
 .st-grade {
@@ -663,6 +670,43 @@
 
 .st-spark polyline.is-falling {
 	stroke: var(--st-red);
+}
+
+.st-share {
+	display: flex;
+	width: 80px;
+	height: 6px;
+	overflow: hidden;
+	border-radius: 3px;
+	background: var(--background-modifier-border);
+}
+
+.st-share-kept {
+	background: var(--interactive-accent);
+}
+
+.st-share-faded {
+	background: var(--st-red);
+	opacity: 0.6;
+}
+
+.st-reflections {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.sloptube .st-reflect,
+.sloptube .st-reflection {
+	flex: none;
+	padding: 2px 10px;
+	font-size: 0.85em;
+}
+
+.sloptube .st-reflection {
+	min-width: 26px;
+	padding: 2px 8px;
+	font-weight: 600;
 }
 
 @media (prefers-reduced-motion: reduce) {

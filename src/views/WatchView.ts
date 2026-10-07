@@ -3,6 +3,8 @@
 
 import { Component, ItemView, MarkdownRenderer, Menu, Platform, ViewStateResult, WorkspaceLeaf, getFrontMatterInfo, setIcon } from "obsidian";
 import type SlopTube from "../main";
+import { BASE_GATE, type Segment, parseGates } from "../gates";
+import { DUE_R, recallProb } from "../memory";
 import type { NoteCard } from "../model";
 import { relatedCards } from "../related";
 import { formatAge, formatViews, hash } from "../util";
@@ -108,7 +110,7 @@ export class WatchView extends ItemView {
 		const name = who.createDiv({ cls: "st-channel-name", text: card.subject });
 		if (card.verified) name.createSpan({ cls: "st-verified", text: " ✔" });
 		who.createDiv({ cls: "st-stats", text: [card.section, `${channel?.cards.length ?? 0} videó`].filter(Boolean).join(" • ") });
-		renderRetention(who, plugin.keptSeries(card.subject));
+		renderRetention(who, plugin.retention(card.subject));
 		const hub = channel?.hub;
 		if (hub && hub !== card) {
 			name.addClass("is-link");
@@ -120,57 +122,103 @@ export class WatchView extends ItemView {
 
 		const desc = col.createDiv({ cls: "st-description" });
 		desc.createDiv({ cls: "st-stats", text: [formatViews(card.backlinks.length, hash(card.path)), formatAge(card.updated)].filter(Boolean).join(" • ") });
-		// The title is the question, the hook its answer: hide the answer until asked for,
-		// unless the gate is off or the note was already graded today.
-		const gated = plugin.settings.recallGate && !plugin.recall.gradedToday(card.path);
-		const gate = gated ? desc.createDiv({ cls: "st-gate" }) : null;
-		const answer = desc.createDiv({ cls: "st-answer" });
-		if (bait.hook) answer.createDiv({ cls: "st-hook", text: bait.hook });
-		const grade = answer.createDiv({ cls: "st-grade" });
-		this.renderGrade(grade, card);
-		if (gate) this.renderGate(gate, answer, grade, bait.hook !== null);
-		const note = answer.createDiv({ cls: "st-note markdown-rendered" });
+		this.renderStudyToggle(desc, card);
+		const body = desc.createDiv({ cls: "st-answer" });
 		// Not cachedRead: the Claude CLI may have just rewritten the note outside Obsidian.
 		const text = await plugin.app.vault.read(card.file);
 		if (this.card() !== card) return; // navigated away while reading
-		await MarkdownRenderer.render(plugin.app, text.slice(getFrontMatterInfo(text).contentStart), note, card.path, this.page);
+		const markdown = text.slice(getFrontMatterInfo(text).contentStart);
+		// Only a studied note is gated; the title is its question and the hook the base gate's answer.
+		const segments: Segment[] = card.studied ? parseGates(markdown) : [{ kind: "open", text: markdown }];
+		const hasBase = segments.some((s) => s.kind === "gate" && s.id === BASE_GATE);
+		if (bait.hook && !hasBase) body.createDiv({ cls: "st-hook", text: bait.hook });
+		for (const seg of segments) {
+			if (seg.kind === "open") {
+				await this.renderMarkdown(body.createDiv({ cls: "st-note markdown-rendered" }), seg.text, card);
+			} else {
+				const hook = seg.id === BASE_GATE ? bait.hook : null;
+				await this.renderGate(body.createDiv({ cls: "st-gate" }), card, seg, hook);
+			}
+			if (this.card() !== card) return;
+		}
 
 		this.buildRail(card);
 	}
 
-	/** "Megvan a tippem — mutasd" reveals the answer; "Csak nézem" reveals it without grading. */
-	private renderGate(gate: HTMLElement, answer: HTMLElement, grade: HTMLElement, hasHook: boolean): void {
-		answer.hide();
-		gate.createDiv({ cls: "st-gate-prompt", text: hasHook ? "Mi a válasz? Tippelj, mielőtt megnézed." : "Mit tudsz erről? Gondold végig, mielőtt megnézed." });
-		const actions = gate.createDiv({ cls: "st-gate-actions" });
-		const reveal = actions.createEl("button", { cls: "mod-cta st-gate-reveal", text: "Megvan a tippem — mutasd" });
-		const skip = actions.createEl("button", { cls: "st-gate-skip", text: "Csak nézem" });
-		reveal.onclick = () => {
-			gate.remove();
-			answer.show();
-		};
-		skip.onclick = () => {
-			gate.remove();
-			grade.hide();
-			answer.show();
+	private renderMarkdown(el: HTMLElement, text: string, card: NoteCard): Promise<void> {
+		return MarkdownRenderer.render(this.plugin.app, text, el, card.path, this.page!);
+	}
+
+	/** The studied toggle: marking a note puts its summary and every Tartalom subheader behind a gate. */
+	private renderStudyToggle(desc: HTMLElement, card: NoteCard): void {
+		const button = desc.createEl("button", {
+			cls: "st-study",
+			text: card.studied ? "✔ Tanult — visszavonás" : "Megjelölöm tanultnak",
+		});
+		if (!card.studied) button.addClass("mod-cta");
+		button.onclick = () => {
+			button.disabled = true;
+			void this.plugin.setStudied(card, !card.studied);
 		};
 	}
 
-	/** "Tudtad?" with two grades; after grading, the chosen one stays marked and can be changed today. */
-	private renderGrade(el: HTMLElement, card: NoteCard): void {
-		el.empty();
-		const today = this.plugin.recall.gradedToday(card.path);
-		el.createSpan({ cls: "st-grade-q", text: today ? "✔ Rögzítve" : "Tudtad?" });
-		const button = (g: 0 | 1, label: string) => {
-			const b = el.createEl("button", { text: label });
-			if (today?.g === g) b.addClass("is-active");
-			b.onclick = () => {
-				this.plugin.grade(card, g);
-				this.renderGrade(el, card);
+	/**
+	 * One gate: label and a reveal button; revealing shows the text and asks whether it was known.
+	 * A failure blocks the gate again for another try; only the day's first grade is logged.
+	 * A gate already known today stays open.
+	 */
+	private async renderGate(el: HTMLElement, card: NoteCard, seg: Extract<Segment, { kind: "gate" }>, hook: string | null): Promise<void> {
+		const { recall } = this.plugin;
+		el.createDiv({ cls: "st-gate-label", text: seg.label });
+		const actions = el.createDiv({ cls: "st-gate-actions" });
+		const body = el.createDiv({ cls: "st-gate-body" });
+		if (hook) body.createDiv({ cls: "st-hook", text: hook });
+		await this.renderMarkdown(body.createDiv({ cls: "st-note markdown-rendered" }), seg.text, card);
+		const grade = body.createDiv({ cls: "st-grade" });
+
+		const block = () => {
+			actions.empty();
+			grade.empty();
+			body.hide();
+			const retry = recall.gradedToday(card.path, seg.id)?.g === 0;
+			const reveal = actions.createEl("button", { cls: "mod-cta st-gate-reveal", text: retry ? "Még egyszer — mutasd" : "Megvan a tippem — mutasd" });
+			reveal.onclick = () => {
+				actions.empty();
+				body.show();
+				askGrade();
 			};
 		};
-		button(1, "Tudtam");
-		button(0, "Nem tudtam");
+		const askGrade = () => {
+			grade.empty();
+			const retry = recall.gradedToday(card.path, seg.id) !== null;
+			grade.createSpan({ cls: "st-grade-q", text: retry ? "Most már megy?" : "Tudtad?" });
+			const know = grade.createEl("button", { text: "Tudtam" });
+			const dunno = grade.createEl("button", { text: "Nem tudtam" });
+			know.onclick = () => {
+				this.plugin.grade(card, seg.id, 1);
+				known();
+			};
+			dunno.onclick = () => {
+				this.plugin.grade(card, seg.id, 0);
+				block();
+			};
+		};
+		const known = () => {
+			grade.empty();
+			grade.createSpan({ cls: "st-grade-q", text: "✔ Rögzítve" });
+		};
+
+		// Only due gates are blocked: one still fresh opens, ungradable, until it fades.
+		const today = recall.gradedToday(card.path, seg.id);
+		const m = recall.memory(card.path, seg.id);
+		const r = m ? recallProb(m, Date.now()) : 0;
+		if (today?.g === 1) {
+			actions.empty();
+			known();
+		} else if (m && today?.g !== 0 && r >= DUE_R) {
+			actions.empty();
+			grade.createSpan({ cls: "st-grade-q", text: `Még friss — ${Math.round(100 * r)}%` });
+		} else block();
 	}
 
 	/**
@@ -183,6 +231,9 @@ export class WatchView extends ItemView {
 		more.onclick = (evt) => {
 			const menu = new Menu();
 			menu.addItem((i) => i.setTitle("Cím szerkesztése").setIcon("pencil").onClick(() => this.editBait(card)));
+			menu.addItem((i) =>
+				i.setTitle(`A(z) ${card.subject} összes jegyzete tanult`).setIcon("graduation-cap").onClick(() => this.plugin.markSubjectStudied(card.subject)),
+			);
 			if (Platform.isDesktopApp) {
 				const busy = this.plugin.prose.isRunning(card.path);
 				menu.addItem((i) =>

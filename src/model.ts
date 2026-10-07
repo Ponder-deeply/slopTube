@@ -1,6 +1,7 @@
 // The note model: every in-scope wiki page as a NoteCard, built from metadataCache only.
 
-import { App, TFile, TFolder } from "obsidian";
+import { App, CachedMetadata, TFile, TFolder } from "obsidian";
+import { gateIds } from "./gates";
 
 const CONCEPTS = "Wiki/concepts/";
 const SUBJECTS = "Wiki/subjects/";
@@ -18,6 +19,10 @@ export interface NoteCard {
 	updated: string | null;
 	/** `derivation: source` — every claim traces to a vault file. */
 	verified: boolean;
+	/** `studied: true` — the note is gated and its recall is tracked. */
+	studied: boolean;
+	/** Recall gate ids of a studied note, in note order; empty otherwise. */
+	gates: string[];
 	words: number;
 	hasMath: boolean;
 	hasCode: boolean;
@@ -94,6 +99,12 @@ function romanValue(name: string): number {
 	return total;
 }
 
+export function gateIdsOf(cache: CachedMetadata | null): string[] {
+	const headings = (cache?.headings ?? []).map((h) => ({ level: h.level, title: h.heading, line: h.position.start.line }));
+	const content = (cache?.sections ?? []).filter((s) => s.type !== "heading" && s.type !== "yaml").map((s) => s.position.start.line);
+	return gateIds(headings, content);
+}
+
 export class VaultModel {
 	cards: NoteCard[] = [];
 	byPath = new Map<string, NoteCard>();
@@ -113,6 +124,7 @@ export class VaultModel {
 			const fm = cache?.frontmatter ?? {};
 			const h1 = cache?.headings?.find((h) => h.level === 1)?.heading;
 			const sections = cache?.sections ?? [];
+			const studied = fm.studied === true;
 			cards.push({
 				file,
 				path: file.path,
@@ -121,6 +133,8 @@ export class VaultModel {
 				title: h1 ?? file.basename,
 				updated: typeof fm.updated === "string" ? fm.updated : null,
 				verified: fm.derivation === "source",
+				studied,
+				gates: studied ? gateIdsOf(cache) : [],
 				words: Math.round(file.stat.size / BYTES_PER_WORD),
 				hasMath: sections.some((s) => s.type === "math"),
 				hasCode: sections.some((s) => s.type === "code"),
@@ -204,6 +218,30 @@ export class VaultModel {
 		const rest = ch.cards.filter((c) => !c.isHub && !listed.has(c));
 		ch.sections = [...bySection.values()];
 		if (rest.length) ch.sections.push({ heading: "Egyéb", cards: rest });
+	}
+
+	/** The subject's course folder in the newest semester that has one (`Egyetem/v/analiii`), or null. */
+	courseFolder(subject: string): string | null {
+		const root = this.app.vault.getAbstractFileByPath(SEMESTERS);
+		if (!(root instanceof TFolder)) return null;
+		const semesters = root.children
+			.filter((f): f is TFolder => f instanceof TFolder && romanValue(f.name) > 0)
+			.sort((a, b) => romanValue(b.name) - romanValue(a.name));
+		const hit = semesters.find((sem) => sem.children.some((f) => f instanceof TFolder && f.name === subject));
+		return hit ? `${hit.path}/${subject}` : null;
+	}
+
+	/**
+	 * Reflections written for a lecture: notes in the subject's course folder whose `reflection`
+	 * front matter names the lecture's hub heading, oldest first.
+	 */
+	reflections(subject: string, lecture: string): TFile[] {
+		const folder = this.courseFolder(subject);
+		if (!folder) return [];
+		return this.app.vault
+			.getMarkdownFiles()
+			.filter((f) => f.path.startsWith(`${folder}/`) && this.app.metadataCache.getFileCache(f)?.frontmatter?.reflection === lecture)
+			.sort((a, b) => a.stat.ctime - b.stat.ctime);
 	}
 
 	private findActiveSubjects(): Set<string> {

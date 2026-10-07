@@ -1,18 +1,29 @@
 // SlopTube: browse the wiki as a YouTube-style feed.
 // Goal: passive review of the active semester's exam subjects (see the plan / README).
 
-import { FileSystemAdapter, Notice, Plugin, WorkspaceLeaf, debounce } from "obsidian";
+import { FileSystemAdapter, Notice, Plugin, TFile, WorkspaceLeaf, debounce, normalizePath } from "obsidian";
 import { BaitStore } from "./bait";
 import { ProseRunner } from "./claude";
 import { randomWeight, weightedShuffle } from "./feed";
-import { DAY, type Streak, dayKey, dueAt, keptSeries, overdue, streak } from "./memory";
-import { type NoteCard, VaultModel } from "./model";
+import { DAY, type Streak, dayKey, kept, keptSeries, streak } from "./memory";
+import { type NoteCard, VaultModel, gateIdsOf, topicOf } from "./model";
 import { decorateNewTabs, undecorateNewTabs } from "./newtab";
 import { type OwlContext, owlLine } from "./owl";
 import { RecallStore } from "./recall";
 import { DEFAULT_SETTINGS, SlopSettingTab, SlopSettings } from "./settings";
+import { ConfirmModal, NameModal } from "./views/ConfirmModal";
 import { FeedView, VIEW_FEED } from "./views/FeedView";
 import { VIEW_WATCH, WatchView } from "./views/WatchView";
+
+/** See `SlopTube.retention`. */
+export interface Retention {
+	/** 30-day series (today last) of the mean recall probability of the subject's studied notes, 0–100. */
+	series: number[];
+	/** Percent of all the subject's notes that are kept (studied and still remembered). */
+	kept: number;
+	/** Percent of all the subject's notes that are studied. */
+	studied: number;
+}
 
 export default class SlopTube extends Plugin {
 	override settings: SlopSettings = DEFAULT_SETTINGS;
@@ -20,8 +31,8 @@ export default class SlopTube extends Plugin {
 	bait = new BaitStore();
 	prose = new ProseRunner();
 	recall = new RecallStore();
-	/** Subject → its 30-day kept % series, valid for one local day and until the next grade. */
-	private keptCache = new Map<string, { day: string; series: number[] }>();
+	/** Subject → its retention figures, valid for one local day and until the next grade. */
+	private keptCache = new Map<string, { day: string; series: number[]; kept: number }>();
 
 	override async onload(): Promise<void> {
 		await this.loadSettings();
@@ -51,6 +62,26 @@ export default class SlopTube extends Plugin {
 				return true;
 			},
 		});
+		this.addCommand({
+			id: "toggle-studied",
+			name: "Toggle studied on current note",
+			checkCallback: (checking) => {
+				const card = this.activeCard();
+				if (!card || card.isHub) return false;
+				if (!checking) void this.setStudied(card, !card.studied);
+				return true;
+			},
+		});
+		this.addCommand({
+			id: "mark-subject-studied",
+			name: "Mark all notes of the current subject studied",
+			checkCallback: (checking) => {
+				const card = this.activeCard();
+				if (!card) return false;
+				if (!checking) this.markSubjectStudied(card.subject);
+				return true;
+			},
+		});
 		this.addCommand({ id: "random-video", name: "Random video", callback: () => this.randomVideo() });
 		// Both events: an empty tab can refill its action list after the layout change fired.
 		this.registerEvent(this.app.workspace.on("layout-change", () => decorateNewTabs(this)));
@@ -74,6 +105,8 @@ export default class SlopTube extends Plugin {
 		const wasEmpty = this.model.cards.length === 0;
 		this.model.rebuild();
 		this.keptCache.clear();
+		this.recall.invalidate();
+		if (this.model.cards.some((c) => c.gates.length)) this.recall.backfill((path) => this.model.byPath.get(path)?.gates ?? []);
 		if (!wasEmpty) return;
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_FEED)) (leaf.view as FeedView).render();
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_WATCH)) void (leaf.view as WatchView).render();
@@ -154,30 +187,131 @@ export default class SlopTube extends Plugin {
 		return streak(this.recall.daily(), this.recall.goals, this.dailyGoal(), dayKey(now));
 	}
 
-	/** Golden = recalled before and now overdue. */
+	/** Golden = a studied note with a gate that is due: never graded, or graded and now overdue. */
 	isGolden(card: NoteCard, now = Date.now()): boolean {
-		return overdue(this.recall.memory(card.path), now) > 0;
+		return this.recall.overdue(card, now) > 0;
 	}
 
-	/** A subject's kept % for the last 30 days, today last. */
-	keptSeries(subject: string, now = Date.now()): number[] {
+	/**
+	 * A subject's retention, two ways. Against all its notes (hubs aside): `studied` and `kept`,
+	 * so what is studied but faded is the gap and the rest is not studied yet. Among the studied
+	 * notes only: the 30-day `series`, which an unstudied backlog would otherwise flatten, so a
+	 * real decline shows (the owl watches it). Every note weighs the same whatever its gate count.
+	 */
+	retention(subject: string, now = Date.now()): Retention {
 		const day = dayKey(now);
-		const hit = this.keptCache.get(subject);
-		if (hit?.day === day) return hit.series;
-		const cards = this.model.channel(subject)?.cards ?? [];
-		const series = keptSeries(cards.map((c) => this.recall.events(c.path)), now);
-		this.keptCache.set(subject, { day, series });
-		return series;
+		const cards = (this.model.channel(subject)?.cards ?? []).filter((c) => !c.isHub);
+		const studiedCards = cards.filter((c) => c.studied);
+		const studied = cards.length ? (100 * studiedCards.length) / cards.length : 0;
+		let hit = this.keptCache.get(subject);
+		if (hit?.day !== day) {
+			const histories = (list: NoteCard[]) => list.map((c) => c.gates.map((gate) => this.recall.events(c.path, gate)));
+			const series = studiedCards.length ? keptSeries(histories(studiedCards), now) : [];
+			const keptAll = kept(histories(cards), now);
+			this.keptCache.set(subject, (hit = { day, series, kept: keptAll }));
+		}
+		return { series: hit.series, kept: hit.kept, studied };
 	}
 
-	/** Logs a graded recall and updates every feed's streak and owl. */
-	grade(card: NoteCard, g: 0 | 1): void {
+	/** Logs a graded gate recall and updates every feed's streak and owl. */
+	grade(card: NoteCard, gate: string, g: 0 | 1): void {
 		const before = this.streak();
-		this.recall.grade(card.path, g, this.dailyGoal());
+		this.recall.grade(card.path, gate, g, this.dailyGoal(), card.gates);
 		this.keptCache.delete(card.subject);
 		const after = this.streak();
 		if (before.today < before.goal && after.today >= after.goal) new Notice("Mai adag kész. A Minisztérium elégedett.");
 		this.refreshHabit();
+	}
+
+	/**
+	 * Asks for a name, then opens a new note by it in a new tab, in the subject's course folder
+	 * (newest semester). An existing note of that name is opened as it is, never overwritten.
+	 */
+	writeReflection(subject: string, lecture: string): void {
+		const folder = this.model.courseFolder(subject);
+		if (!folder) return void new Notice(`SlopTube: nincs Egyetem/…/${subject} mappa.`);
+		new NameModal(this.app, "Reflexió írása", `Reflexió — ${topicOf(lecture)}`, async (raw) => {
+			const name = raw.replace(/[\\/:*?"<>|#^[\]]/g, " ").replace(/\s+/g, " ").trim();
+			if (!name) return void new Notice("SlopTube: a jegyzetnek nevet kell adni.");
+			const path = normalizePath(`${folder}/${name}.md`);
+			let file = this.app.vault.getAbstractFileByPath(path);
+			if (file && !(file instanceof TFile)) return void new Notice(`SlopTube: ${path} nem jegyzet.`);
+			if (!file) file = await this.app.vault.create(path, `---\nreflection: ${JSON.stringify(lecture)}\n---\n# ${name}\n\n${this.lectureQuery(subject, lecture)}`);
+			else new Notice("SlopTube: ez a jegyzet már létezik, megnyitom.");
+			const note = file as TFile;
+			// The new note lists on its lecture's shelf once the metadata cache has read its front matter.
+			const ref = this.app.metadataCache.on("changed", (f) => {
+				if (f.path !== note.path) return;
+				this.app.metadataCache.offref(ref);
+				this.refreshViews();
+			});
+			await this.app.workspace.getLeaf("tab").openFile(note);
+		}).open();
+	}
+
+	/**
+	 * A Dataview block listing the wiki pages the subject's hub links under a lecture heading. It
+	 * is a query, not a copied list, so it follows the hub as the lecture's pages change.
+	 */
+	private lectureQuery(subject: string, lecture: string): string {
+		const hub = this.model.channel(subject)?.hub;
+		if (!hub) return "";
+		const str = (v: string) => `"${v.replace(/[\\"]/g, "\\$&")}"`;
+		return [
+			"```dataview",
+			"LIST WITHOUT ID L.outlinks[0]",
+			'FROM "Wiki/subjects"',
+			"FLATTEN file.lists AS L",
+			`WHERE file.path = ${str(hub.path)} AND meta(L.section).subpath = ${str(lecture)} AND length(L.outlinks) > 0`,
+			"```",
+			"",
+			"",
+		].join("\n");
+	}
+
+	/** Marks a note studied (gated, tracked) or not, in its front matter. */
+	async setStudied(card: NoteCard, studied: boolean): Promise<void> {
+		await this.writeStudied(card, studied);
+		this.afterStudiedChange();
+	}
+
+	/** Marks every note of a subject (hub aside) studied, after the user confirms. */
+	markSubjectStudied(subject: string): void {
+		const cards = (this.model.channel(subject)?.cards ?? []).filter((c) => !c.isHub && !c.studied);
+		if (!cards.length) return void new Notice(`SlopTube: a(z) ${subject} minden jegyzete már tanult.`);
+		new ConfirmModal(this.app, `${cards.length} jegyzet tanultnak jelölése`, `A(z) ${subject} ${cards.length} jegyzetének frontmatterébe studied: true kerül.`, async () => {
+			for (const card of cards) await this.writeStudied(card, true);
+			this.afterStudiedChange();
+			new Notice(`SlopTube: ${cards.length} jegyzet tanultnak jelölve (${subject}).`);
+		}).open();
+	}
+
+	private async writeStudied(card: NoteCard, studied: boolean): Promise<void> {
+		await this.app.fileManager.processFrontMatter(card.file, (fm: Record<string, unknown>) => {
+			if (studied) fm.studied = true;
+			else delete fm.studied;
+		});
+		// The metadata cache lags the write; the next rebuild recomputes the same values.
+		card.studied = studied;
+		card.gates = studied ? this.gatesOf(card) : [];
+	}
+
+	private afterStudiedChange(): void {
+		this.keptCache.clear();
+		this.recall.invalidate();
+		this.refreshViews();
+	}
+
+	/** The note on screen: the watch page's, else the active markdown file's. */
+	private activeCard(): NoteCard | undefined {
+		const view = this.app.workspace.getActiveViewOfType(WatchView);
+		const path = view ? (view.getState().path as string | null) : this.app.workspace.getActiveFile()?.path;
+		return path ? this.model.byPath.get(path) : undefined;
+	}
+
+	private gatesOf(card: NoteCard): string[] {
+		const cache = this.app.metadataCache.getFileCache(card.file);
+		return gateIdsOf(cache);
 	}
 
 	owlLine(now = Date.now()): string | null {
@@ -185,15 +319,15 @@ export default class SlopTube extends Plugin {
 		let longOverdue: NoteCard | null = null;
 		let oldestDue = now - 7 * DAY;
 		for (const card of this.model.cards) {
-			const m = this.recall.memory(card.path);
-			if (m && dueAt(m) < oldestDue) {
-				oldestDue = dueAt(m);
+			const due = this.recall.nextDue(card.path);
+			if (due !== null && due < oldestDue) {
+				oldestDue = due;
 				longOverdue = card;
 			}
 		}
 		const fading = [...this.model.activeSubjects].find((subject) => {
-			const series = this.keptSeries(subject, now);
-			return series[series.length - 8] - series[series.length - 1] > 10;
+			const series = this.retention(subject, now).series;
+			return series.length > 8 && series[series.length - 8] - series[series.length - 1] > 10;
 		});
 		const ctx: OwlContext = {
 			streak: this.streak(now),
