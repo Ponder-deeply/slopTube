@@ -5,6 +5,8 @@
 	--st-radius: 12px;
 	--st-red: #ff0033;
 	--st-gold: #f5b301;
+	--st-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+	--st-ring: 0 0 0 2px var(--background-primary), 0 0 0 4px var(--interactive-accent);
 	/* Text sizes below are relative (em), so this scales all of them; thumbnail art uses cqw. */
 	font-size: calc(var(--st-font-scale, 1) * 1em);
 }
@@ -27,17 +29,19 @@
 	display: flex;
 	align-items: center;
 	gap: 16px;
-	padding: 10px 20px;
-	background: var(--background-primary);
+	padding: 12px 20px 10px;
+	background: color-mix(in srgb, var(--background-primary) 86%, transparent);
+	backdrop-filter: blur(14px) saturate(1.4);
+	box-shadow: 0 1px 0 var(--background-modifier-border);
 }
 
 .st-logo {
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	font-weight: 800;
-	font-size: 1.2em;
-	letter-spacing: -0.03em;
+	font-weight: 850;
+	font-size: 1.25em;
+	letter-spacing: -0.045em;
 }
 
 .st-logo-icon {
@@ -46,6 +50,7 @@
 	border-radius: 7px;
 	background: var(--st-red);
 	color: #fff;
+	box-shadow: 0 2px 8px -2px color-mix(in srgb, var(--st-red) 60%, transparent);
 }
 
 .st-logo-icon svg {
@@ -65,8 +70,26 @@
 	border-radius: 8px;
 	background: var(--background-modifier-hover);
 	color: var(--text-normal);
-	font-weight: 500;
+	font-weight: 550;
 	white-space: nowrap;
+	transition: background-color 0.18s var(--st-ease), color 0.18s var(--st-ease), transform 0.12s var(--st-ease);
+}
+
+.st-tabs button:hover,
+.st-chip:hover {
+	background: var(--background-modifier-active-hover, var(--background-modifier-border));
+}
+
+.st-tabs button:active,
+.st-chip:active,
+.sloptube button:active {
+	transform: translateY(1px) scale(0.98);
+}
+
+.sloptube button:focus-visible,
+.st-card:focus-visible {
+	outline: none;
+	box-shadow: var(--st-ring);
 }
 
 .st-tabs button.is-active,
@@ -85,19 +108,21 @@
 .st-chips {
 	display: flex;
 	gap: 8px;
-	padding: 4px 20px 12px;
+	padding: 12px 20px 12px;
 	overflow-x: auto;
 	scrollbar-width: none;
 }
 
 .st-body {
-	padding: 4px 20px 40px;
+	padding: 8px 20px 56px;
 }
 
 .st-empty {
 	padding: 60px 0;
 	text-align: center;
 	color: var(--text-muted);
+	font-size: 1.05em;
+	text-wrap: balance;
 }
 
 .st-sentinel {
@@ -109,7 +134,7 @@
 .st-grid {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(var(--st-card-w, 260px), 1fr));
-	gap: 28px 16px;
+	gap: 36px 18px;
 }
 
 .st-card {
@@ -122,7 +147,26 @@
 	aspect-ratio: 16 / 9;
 	overflow: hidden;
 	container-type: inline-size;
+	border-radius: var(--st-radius);
 	background: #0b0b12;
+	box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04) inset, 0 1px 2px rgba(5, 5, 20, 0.18);
+	transition: transform 0.28s var(--st-ease), box-shadow 0.28s var(--st-ease);
+}
+
+.st-card:hover .st-thumb {
+	transform: translateY(-3px);
+	box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06) inset, 0 14px 28px -12px rgba(5, 5, 30, 0.55);
+}
+
+.st-card:active .st-thumb {
+	transform: translateY(-1px) scale(0.99);
+	transition-duration: 0.1s;
+}
+
+/* The watch page's player is the same element at full width: no hover lift. */
+.st-player {
+	border-radius: calc(var(--st-radius) + 4px);
+	box-shadow: 0 20px 48px -24px rgba(5, 5, 30, 0.6);
 }
 
 /* 48 columns × 18 rows fill the 16:9 box; sizes derive from the thumbnail's own width. */
@@ -155,14 +199,18 @@
 }
 
 .st-duration {
-	right: 6px;
-	bottom: 6px;
-	background: rgba(0, 0, 0, 0.8);
+	right: 8px;
+	bottom: 8px;
+	background: rgba(8, 8, 16, 0.78);
+	backdrop-filter: blur(4px);
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0.02em;
 }
 
 .st-badge {
-	left: 6px;
-	top: 6px;
+	left: 8px;
+	top: 8px;
+	letter-spacing: 0.04em;
 	background: var(--st-red);
 }
 
@@ -175,7 +223,9 @@
 .st-avatar {
 	flex: 0 0 36px;
 	height: 36px;
-	border-radius: 50%;
+	border-radius: 11px;
+	letter-spacing: -0.02em;
+	box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12) inset;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -190,12 +240,20 @@
 
 .st-title {
 	display: -webkit-box;
-	-webkit-line-clamp: 2;
+	-webkit-line-clamp: 3;
 	-webkit-box-orient: vertical;
 	overflow: hidden;
-	font-weight: 600;
-	line-height: 1.35;
+	font-size: 1.06em;
+	font-weight: 800;
+	line-height: 1.28;
+	letter-spacing: -0.018em;
+	text-wrap: pretty;
 	color: var(--text-normal);
+	transition: color 0.18s var(--st-ease);
+}
+
+.st-card:hover .st-title {
+	color: var(--text-accent);
 }
 
 .st-channel,
@@ -203,10 +261,12 @@
 .st-shelf-count {
 	font-size: 0.85em;
 	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
 }
 
 .st-channel {
-	margin-top: 4px;
+	margin-top: 6px;
+	font-weight: 500;
 }
 
 .st-verified {
@@ -225,7 +285,7 @@
 /* ---------- Channel shelves ---------- */
 
 .st-shelf {
-	margin-bottom: 36px;
+	margin-bottom: 44px;
 }
 
 .st-shelf-header {
@@ -236,8 +296,9 @@
 }
 
 .st-shelf-name {
-	font-size: 1.25em;
-	font-weight: 700;
+	font-size: 1.4em;
+	font-weight: 850;
+	letter-spacing: -0.03em;
 }
 
 .st-live {
@@ -246,14 +307,17 @@
 	background: var(--st-red);
 	color: #fff;
 	font-size: 0.73em;
-	font-weight: 700;
+	font-weight: 800;
+	letter-spacing: 0.06em;
 }
 
 .st-shelf-row {
 	display: flex;
 	gap: 16px;
 	overflow-x: auto;
-	padding-bottom: 8px;
+	/* Room for the hover lift and focus ring, which overflow would otherwise clip. */
+	padding: 6px 4px 10px;
+	margin: -6px -4px 0;
 	scroll-snap-type: x proximity;
 }
 
@@ -289,11 +353,13 @@
 	display: inline-flex;
 }
 
-
 .st-watch-title {
-	margin: 14px 0 10px;
-	font-size: 1.5em;
-	line-height: 1.3;
+	margin: 22px 0 14px;
+	font-size: 2em;
+	font-weight: 850;
+	line-height: 1.12;
+	letter-spacing: -0.035em;
+	text-wrap: balance;
 }
 
 .st-watch-channel {
@@ -304,7 +370,7 @@
 }
 
 .st-channel-name {
-	font-weight: 600;
+	font-weight: 700;
 }
 
 .st-open-note {
@@ -325,14 +391,17 @@
 }
 
 .st-description {
-	padding: 12px 18px;
+	padding: 16px 20px 20px;
 	border-radius: var(--st-radius);
 	background: var(--background-secondary);
 }
 
 .st-hook {
-	margin-top: 6px;
-	font-weight: 600;
+	margin-top: 8px;
+	font-size: 1.08em;
+	font-weight: 750;
+	letter-spacing: -0.01em;
+	text-wrap: pretty;
 }
 
 .st-note {
@@ -350,9 +419,9 @@
 	padding: 10px 20px 16px;
 	background: var(--background-primary);
 	border-top: 1px solid var(--background-modifier-border);
-	box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.25);
+	box-shadow: 0 -16px 40px -12px rgba(5, 5, 30, 0.35);
 	transform: translateY(100%);
-	transition: transform 0.25s ease;
+	transition: transform 0.32s var(--st-ease);
 }
 
 .st-rail.is-shown {
@@ -361,13 +430,20 @@
 
 .st-rail-title {
 	margin-bottom: 8px;
-	font-weight: 700;
+	font-weight: 850;
+	letter-spacing: -0.02em;
 }
 
 .st-rail-row {
 	display: flex;
 	gap: 14px;
 	overflow-x: auto;
+	padding: 6px 4px 4px;
+	margin: -6px -4px 0;
+}
+
+.st-rail .st-title {
+	font-size: 0.98em;
 }
 
 .st-rail .st-card {
@@ -401,10 +477,10 @@
 	align-items: center;
 	gap: 10px;
 	margin-bottom: 12px;
-	padding: 8px 14px;
+	padding: 9px 14px;
 	border-left: 4px solid var(--st-accent);
-	border-radius: 0 8px 8px 0;
-	background: var(--background-secondary);
+	border-radius: 0 10px 10px 0;
+	background: linear-gradient(90deg, color-mix(in srgb, var(--st-accent) 12%, var(--background-secondary)), var(--background-secondary) 60%);
 }
 
 .st-lecture-badge {
@@ -419,8 +495,9 @@
 }
 
 .st-lecture-name {
-	font-size: 1.1em;
-	font-weight: 700;
+	font-size: 1.12em;
+	font-weight: 800;
+	letter-spacing: -0.02em;
 }
 
 .st-lecture-header .st-shelf-count {
@@ -498,19 +575,25 @@
 }
 
 .st-owl {
-	padding: 0 20px 12px;
+	padding: 0 20px 14px;
+	text-wrap: pretty;
 	color: var(--text-muted);
 	font-style: italic;
 }
 
 .st-card.is-golden .st-thumb {
-	box-shadow: 0 0 0 3px var(--st-gold);
+	box-shadow: 0 0 0 3px var(--st-gold), 0 8px 24px -10px color-mix(in srgb, var(--st-gold) 70%, transparent);
+}
+
+.st-card.is-golden:hover .st-thumb {
+	box-shadow: 0 0 0 3px var(--st-gold), 0 16px 32px -12px color-mix(in srgb, var(--st-gold) 80%, transparent);
 }
 
 .st-badge-due {
 	position: absolute;
-	right: 6px;
-	top: 6px;
+	right: 8px;
+	top: 8px;
+	letter-spacing: 0.03em;
 	padding: 1px 5px;
 	border-radius: 4px;
 	font-size: 12px;
@@ -580,4 +663,15 @@
 
 .st-spark polyline.is-falling {
 	stroke: var(--st-red);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.sloptube *,
+	.st-rail {
+		transition-duration: 0.01ms !important;
+	}
+
+	.st-card:hover .st-thumb {
+		transform: none;
+	}
 }

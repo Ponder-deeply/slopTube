@@ -87,6 +87,12 @@ export function renderCard(
 	el.addEventListener("auxclick", (evt) => {
 		if (evt.button === 1) onOpen(card, evt);
 	});
+	el.tabIndex = 0;
+	el.addEventListener("keydown", (evt) => {
+		if (evt.key !== "Enter") return;
+		evt.preventDefault();
+		onOpen(card, new MouseEvent("click", { ctrlKey: evt.ctrlKey, metaKey: evt.metaKey }));
+	});
 	return el;
 }
 
